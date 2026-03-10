@@ -5,157 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LFS Pit Wall - Live Timing</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- SignalR from multiple CDN sources for redundancy -->
-    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/signalr.min.js"></script>
-    <script>
-        // Fallback CDN loader
-        window.signalRLoadPromise = new Promise((resolve, reject) => {
-            if (window.signalR) {
-                console.log("✅ SignalR already loaded");
-                resolve();
-                return;
-            }
-            
-            // Try alternative CDN if main fails
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js';
-            script.onload = () => {
-                console.log("✅ SignalR loaded from fallback CDN");
-                resolve();
-            };
-            script.onerror = () => {
-                console.warn("⚠️ Both CDNs failed, retrying...");
-                reject(new Error("Failed to load SignalR from any CDN"));
-            };
-            
-            // Only append if main CDN failed
-            if (!window.signalR) {
-                document.head.appendChild(script);
-            }
-        });
-    </script>
-    <style>
-        body {
-            background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
-            color: #e0e0e0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 15px; /* Increase base font size from default 14px */
-        }
-
-        .session-info {
-            background: linear-gradient(135deg, #2d2d44 0%, #3d3d54 100%);
-            border: 1px solid #404050;
-        }
-
-        .timing-table {
-            background: rgba(20, 20, 30, 0.8);
-            backdrop-filter: blur(10px);
-        }
-
-        .header-bar {
-            background: linear-gradient(90deg, #7c3aed 0%, #6d55ff 100%);
-        }
-
-        .driver-row {
-            background: rgba(30, 30, 45, 0.6);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: background-color 0.2s ease;
-        }
-
-        .driver-row:hover {
-            background: rgba(40, 40, 60, 0.8);
-        }
-
-        .session-best {
-            background: rgba(168, 85, 247, 0.2);
-            color: #e9d5ff;
-        }
-
-        .personal-best {
-            background: rgba(34, 197, 94, 0.2);
-            color: #dcfce7;
-        }
-
-        .current-time {
-            background: rgba(255, 255, 255, 0.1);
-            color: #f0f0f0;
-        }
-
-        .gap-indicator {
-            font-size: 0.95rem;
-            color: #a0a0a0;
-        }
-
-        .pulse-live {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .sector-time {
-            font-size: 0.9rem;
-            padding: 2px 6px;
-            border-radius: 3px;
-            display: inline-block;
-            margin: 0 2px;
-        }
-
-        .position-badge {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            font-weight: bold;
-            background: linear-gradient(135deg, #7c3aed 0%, #6d55ff 100%);
-        }
-
-        .position-1 {
-            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-            box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
-        }
-
-        .position-2 {
-            background: linear-gradient(135deg, #c0cfe7 0%, #a0a0a0 100%);
-        }
-
-        .position-3 {
-            background: linear-gradient(135deg, #d4a574 0%, #c9703f 100%);
-        }
-
-        .lfs-logo {
-            width: 40px;
-            height: 40px;
-            object-fit: contain;
-        }
-
-        .driver-name {
-            font-weight: 600;
-            padding: 2px 4px;
-            border-radius: 3px;
-        }
-
-        .lfs-logo {
-            width: 40px;
-            height: 40px;
-            object-fit: contain;
-        }
-
-        .driver-name {
-            font-weight: 600;
-            padding: 2px 4px;
-            border-radius: 3px;
-        }
-    </style>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
     <div class="min-h-screen p-4 sm:p-6">
-        <!-- Main Container -->
         <div class="max-w-7xl mx-auto">
+
             <!-- Header -->
             <div class="mb-6">
                 <div class="flex items-center justify-between mb-4">
@@ -175,9 +30,8 @@
                 </div>
             </div>
 
-            <!-- Session Info Card + Best Lap Info in one row -->
+            <!-- Session Info + Race Time -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                <!-- Session Info -->
                 <div class="lg:col-span-2 session-info rounded-lg p-4 border">
                     <h3 class="text-gray-400 text-sm mb-3 font-semibold">📋 Session</h3>
                     <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -204,7 +58,6 @@
                     </div>
                 </div>
 
-                <!-- Time Duration and Best Info -->
                 <div class="session-info rounded-lg p-4 border">
                     <h3 class="text-gray-400 text-sm mb-3 font-semibold">⏱️ Race Time</h3>
                     <div class="text-center">
@@ -214,7 +67,7 @@
                 </div>
             </div>
 
-            <!-- Best Lap and Sectors Info -->
+            <!-- Best Lap + Best Sectors -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 <div class="session-info rounded-lg p-4 border">
                     <p class="text-gray-400 text-sm mb-2">🌟 Session Best Lap</p>
@@ -223,7 +76,7 @@
                 </div>
                 <div class="session-info rounded-lg p-4 border">
                     <p class="text-gray-400 text-sm mb-2">📊 Best Sectors</p>
-                    <div class="grid grid-cols-3 gap-2" id="best-sectors">
+                    <div class="grid grid-cols-3 gap-2">
                         <div>
                             <p class="text-xs text-gray-500">S1</p>
                             <p class="text-xl font-bold text-purple-300" id="best-s1">-</p>
@@ -242,12 +95,9 @@
 
             <!-- Live Timing Table -->
             <div class="timing-table rounded-lg overflow-hidden border border-gray-700 mb-6">
-                <!-- Table Header -->
                 <div class="header-bar px-4 py-3">
                     <h2 class="text-lg font-bold">🏁 Live Standings</h2>
                 </div>
-
-                <!-- Table -->
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead class="border-b border-gray-700">
@@ -275,32 +125,6 @@
                 </div>
             </div>
 
-            <!-- Best Lap and Sectors Info -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                <div class="session-info rounded-lg p-4 border">
-                    <p class="text-gray-400 text-sm mb-2">🌟 Session Best Lap</p>
-                    <p class="text-3xl font-bold text-yellow-300" id="session-best-lap">-</p>
-                    <p class="text-xs text-gray-500 mt-2">Fastest lap this session</p>
-                </div>
-                <div class="session-info rounded-lg p-4 border">
-                    <p class="text-gray-400 text-sm mb-2">📊 Best Sectors</p>
-                    <div class="grid grid-cols-3 gap-2" id="best-sectors">
-                        <div>
-                            <p class="text-xs text-gray-500">S1</p>
-                            <p class="text-xl font-bold text-purple-300" id="best-s1">-</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-gray-500">S2</p>
-                            <p class="text-xl font-bold text-purple-300" id="best-s2">-</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-gray-500">S3</p>
-                            <p class="text-xl font-bold text-purple-300" id="best-s3">-</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Debug Console -->
             <div class="session-info rounded-lg p-4 border">
                 <div class="flex items-center justify-between mb-2">
@@ -311,367 +135,10 @@
                     <p>Debug logs will appear here...</p>
                 </div>
             </div>
+
         </div>
     </div>
 
-    <script>
-        // Track render state to prevent flicker
-        let lastRenderState = null;
-        
-        // Wait for SignalR to be available with better error handling
-        function waitForSignalR(callback, maxAttempts = 300) {  // 30 seconds instead of 5
-            let attempts = 0;
-            updateConnectionStatus(false, "Loading SignalR...");
-            
-            const checkInterval = setInterval(() => {
-                attempts++;
-                const timeElapsed = (attempts * 100) / 1000;
-                
-                if (typeof signalR !== 'undefined') {
-                    clearInterval(checkInterval);
-                    console.log("✅ SignalR loaded successfully");
-                    debugLog("✅ SignalR loaded successfully", 'info');
-                    callback();
-                } else {
-                    if (attempts % 10 === 0) {
-                        console.log(`⏳ Waiting for SignalR... (${timeElapsed.toFixed(1)}s)`);
-                        debugLog(`⏳ Waiting for SignalR... (${timeElapsed.toFixed(1)}s)`, 'warn');
-                    }
-                    
-                    if (attempts >= maxAttempts) {
-                        clearInterval(checkInterval);
-                        const errorMsg = `Failed to load SignalR after ${timeElapsed.toFixed(1)}s - Check browser console (F12)`;
-                        console.error("❌ " + errorMsg);
-                        debugLog("❌ " + errorMsg, 'error');
-                        updateConnectionStatus(false, "SignalR Load Failed");
-                    }
-                }
-            }, 100);
-        }
-
-        // Initialize connection once SignalR is loaded
-        waitForSignalR(() => {
-            initializeConnection();
-        });
-
-        function initializeConnection() {
-            // SignalR Connection
-            const connection = new signalR.HubConnectionBuilder()
-                .withUrl("/hubs/timing")
-                .withAutomaticReconnect([1000, 3000, 5000, 10000, 30000])
-                .build();
-
-            connection.onreconnecting(error => {
-                console.log("🔄 Reconnecting...", error);
-                debugLog("🔄 Reconnecting...", 'warn');
-                updateConnectionStatus(false, "Reconnecting...");
-            });
-
-            connection.onreconnected(connectionId => {
-                console.log("✅ Reconnected successfully");
-                debugLog("✅ Reconnected successfully", 'info');
-                updateConnectionStatus(true, "Connected");
-            });
-
-            connection.onclose(error => {
-                console.log("❌ Connection closed", error);
-                debugLog(`❌ Connection closed: ${error?.message || 'Unknown'}`, 'error');
-                updateConnectionStatus(false, "Disconnected");
-            });
-
-            connection.on("ReceiveSessionUpdate", (sessionData) => {
-                const packetType = sessionData.packetType || "SESSION_UPDATE";
-                console.log(`📊 ${packetType} | Players: ${sessionData.players?.length || 0} | Updated: ${new Date().toLocaleTimeString()}`);
-                debugLog(`📦 ${packetType} - ${sessionData.players?.length || 0} drivers, ${sessionData.sessionBestLapMs ? 'Best: ' + formatTime(sessionData.sessionBestLapMs) : 'no data'}`, 'info');
-                updateSessionInfo(sessionData);
-                updateDriversTable(sessionData);
-                updateBestLaps(sessionData);
-            });
-
-            // Start connection with error handling
-            connection.start()
-                .then(() => {
-                    console.log("✅ Connected to SignalR Hub");
-                    debugLog("✅ Connected to SignalR Hub at /hubs/timing", 'info');
-                    updateConnectionStatus(true, "Connected");
-                })
-                .catch(error => {
-                    console.error("❌ Connection failed:", error);
-                    debugLog(`❌ Connection failed: ${error.message}`, 'error');
-                    updateConnectionStatus(false, `Error: ${error.message || 'Connection Failed'}`);
-                    // Retry connection after 3 seconds
-                    setTimeout(() => attemptReconnect(connection), 3000);
-                });
-
-            window.signalRConnection = connection; // Store globally for debugging
-        }
-
-        function attemptReconnect(connection) {
-            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
-                console.log("🔄 Attempting reconnect...");
-                debugLog("🔄 Attempting reconnect...", 'warn');
-                connection.start()
-                    .then(() => {
-                        console.log("✅ Reconnected");
-                        debugLog("✅ Reconnected", 'info');
-                    })
-                    .catch(error => {
-                        console.error("❌ Reconnect failed:", error);
-                        debugLog(`❌ Reconnect failed: ${error.message}`, 'error');
-                        setTimeout(() => attemptReconnect(connection), 5000);
-                    });
-            }
-        }
-
-        function updateConnectionStatus(connected, text) {
-            const statusEl = document.getElementById("connection-status");
-            if (connected) {
-                statusEl.innerHTML = `
-                    <div class="inline-block px-4 py-2 rounded bg-green-900 text-green-200">
-                        <span class="inline-block w-2 h-2 bg-green-500 rounded-full mr-2 pulse-live"></span>
-                        ${text}
-                    </div>
-                `;
-            } else {
-                statusEl.innerHTML = `
-                    <div class="inline-block px-4 py-2 rounded bg-red-900 text-red-200">
-                        <span class="inline-block w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-                        ${text}
-                    </div>
-                `;
-            }
-        }
-
-        function updateSessionInfo(data) {
-            document.getElementById("track-name").textContent = data.trackName || "Unknown";
-            document.getElementById("session-type").textContent = data.sessionType || "-";
-            document.getElementById("weather-type").textContent = data.weatherType || "-";
-            document.getElementById("race-status").textContent = data.raceInProgress ? "🏁 LIVE" : "Idle";
-            
-            // Display current lap / max laps format
-            const maxLaps = Math.max(0, ...data.players.map(p => p.lapsCompleted || 0));
-            const displayMaxLaps = data.maxRaceLaps || maxLaps;
-            document.getElementById("max-laps").textContent = `${maxLaps}/${displayMaxLaps} Laps`;
-            
-            // Update session duration
-            const hours = Math.floor(data.sessionTimeMs / 3600000);
-            const minutes = Math.floor((data.sessionTimeMs % 3600000) / 60000);
-            const seconds = Math.floor((data.sessionTimeMs % 60000) / 1000);
-            document.getElementById("session-duration").textContent = 
-                `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-        }
-
-        function formatTime(ms, isGap = false) {
-            if (!ms || ms === 0) return "-";
-            
-            // Handle negative values (shouldn't happen but can due to floating point errors)
-            const isNegative = ms < 0;
-            const absMs = Math.abs(ms);
-            
-            const minutes = Math.floor(absMs / 60000);
-            const seconds = Math.floor((absMs % 60000) / 1000);
-            const milliseconds = absMs % 1000;
-            const formatted = `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
-            
-            if (isGap) {
-                // For gap display, use + for positive, nothing special for negative (shouldn't occur)
-                return isNegative ? `-${formatted}` : `+${formatted}`;
-            }
-            return formatted;
-        }
-
-        function getTimeClass(currentTime, bestSessionTime, bestPersonalTime) {
-            if (!currentTime || currentTime === 0) return "current-time";
-            // Purple for session best
-            if (bestSessionTime && currentTime === bestSessionTime) return "session-best";
-            // Green for personal best (but not session best)
-            if (bestPersonalTime && currentTime === bestPersonalTime && currentTime !== bestSessionTime) return "personal-best";
-            // White/normal for other times
-            return "current-time";
-        }
-
-        function getLapTimeClass(driverLapTime, sessionBestTime, driverPersonalBestTime) {
-            if (!driverLapTime) return "current-time";
-            // Purple for session best
-            if (sessionBestTime && driverLapTime === sessionBestTime) return "session-best";
-            // Green for personal best
-            if (driverPersonalBestTime && driverLapTime === driverPersonalBestTime && driverLapTime !== sessionBestTime) return "personal-best";
-            // White for current lap
-            return "current-time";
-        }
-
-        function updateDriversTable(data) {
-            const tableBody = document.getElementById("drivers-table");
-            
-            if (!data.players || data.players.length === 0) {
-                tableBody.innerHTML = `
-                    <tr class="driver-row">
-                        <td colspan="10" class="px-4 py-8 text-center text-gray-500">
-                            Waiting for drivers...
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            // Create render key based on driver IDs to prevent unnecessary re-renders
-            const renderKey = data.players.map(p => p.playerId).join(',');
-            if (lastRenderState === renderKey) {
-                // Drivers haven't changed, use innerHTML replacement to prevent flicker
-                // This is more efficient than full re-render
-            }
-            lastRenderState = renderKey;
-
-            let html = "";
-            data.players.forEach((driver, index) => {
-                const position = index + 1;
-                // Real gap: difference in elapsed time when each driver finished their lap
-                // Driver ahead finished their lap at some time, current driver at another
-                const gap = position === 1 ? "-" : 
-                    (data.players[index - 1]?.lastElapsedTimeMs && driver.lastElapsedTimeMs 
-                        ? formatTime(driver.lastElapsedTimeMs - data.players[index - 1].lastElapsedTimeMs, true)
-                        : "-");
-
-                // Get best lap time class
-                const lapTimeClass = getLapTimeClass(
-                    driver.personalBestLapMs,
-                    data.sessionBestLapMs,
-                    driver.personalBestLapMs
-                );
-
-                const sectorTimeClass = (sectorNum) => {
-                    const time = driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] : 0;
-                    const bestSession = data.sessionBestSectors ? data.sessionBestSectors[sectorNum] : 0;
-                    const bestPersonal = driver.personalBestSectors ? driver.personalBestSectors[sectorNum] : 0;
-                    return getTimeClass(time, bestSession, bestPersonal);
-                };
-
-                const positionBadgeClass = position === 1 ? "position-1" : 
-                                          position === 2 ? "position-2" : 
-                                          position === 3 ? "position-3" : "";
-
-                // Driver color styling
-                const driverColor = driver.driverColor || "#7C3AED";
-                const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: ${driverColor};"`;
-
-                html += `
-                    <tr class="driver-row">
-                        <td class="px-4 py-3">
-                            <div class="position-badge ${positionBadgeClass}">
-                                ${position}
-                            </div>
-                        </td>
-                        <td class="px-4 py-3 font-semibold driver-name" ${driverNameStyle} data-driver-id="${driver.playerId}"></td>
-                        <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
-                        <td class="px-4 py-3">${driver.lapsCompleted}</td>
-                        <td class="px-4 py-3 font-mono text-sm">
-                            <span class="${lapTimeClass} px-2 py-1 rounded">
-                                ${formatTime(driver.personalBestLapMs)}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 font-mono text-sm">${formatTime(driver.currentLapTimeMs)}</td>
-                        <td class="px-4 py-3 text-xs">
-                            <span class="sector-time ${sectorTimeClass(1)}">S1: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[1]) || 0)}</span>
-                            <br>
-                            <span class="sector-time ${sectorTimeClass(2)}">S2: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[2]) || 0)}</span>
-                            <br>
-                            <span class="sector-time ${sectorTimeClass(3)}">S3: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[3]) || 0)}</span>
-                        </td>
-                        <td class="px-4 py-3 text-sm gap-indicator">${gap}</td>
-                        <td class="px-4 py-3">
-                            ${driver.fuelPercent !== null && driver.fuelPercent !== undefined ? `
-                            <div class="relative w-12 h-2 bg-gray-700 rounded-full overflow-hidden">
-                                <div class="absolute h-full bg-gradient-to-r from-green-500 to-yellow-500 rounded-full" 
-                                     style="width: ${driver.fuelPercent}%"></div>
-                            </div>
-                            <span class="text-xs text-gray-400">${driver.fuelPercent}%</span>
-                            ` : '<span class="text-xs text-gray-500 italic">N/A</span>'}
-                        </td>
-                        <td class="px-4 py-3 text-center">${driver.pitStops}</td>
-                    </tr>
-                `;
-            });
-
-            tableBody.innerHTML = html;
-
-            // Apply colored driver names with innerHTML
-            data.players.forEach((driver) => {
-                const nameCell = tableBody.querySelector(`[data-driver-id="${driver.playerId}"]`);
-                if (nameCell) {
-                    if (driver.nameHtml) {
-                        nameCell.innerHTML = driver.nameHtml;
-                    } else {
-                        nameCell.textContent = driver.name;
-                    }
-                }
-            });
-        }
-
-        function updateBestLaps(data) {
-            // Build display with session best lap author and lap number
-            let sessionBestDriverName = "";
-            if (data.sessionBestLapAuthorName && data.sessionBestLapNumber) {
-                const author = data.sessionBestLapAuthorName;
-                const username = data.sessionBestLapAuthorUsername ? ` <span style="color:#AAAAAA">(${data.sessionBestLapAuthorUsername})</span>` : "";
-                sessionBestDriverName = ` - ${author}${username} [Lap ${data.sessionBestLapNumber}]`;
-            }
-            
-            const sessionBestDisplay = formatTime(data.sessionBestLapMs) || "-";
-            const displayText = sessionBestDisplay + sessionBestDriverName;
-            document.getElementById("session-best-lap").textContent = displayText;
-            document.getElementById("session-best-lap").innerHTML = displayText; // Use innerHTML for colored username
-
-            if (data.sessionBestSectors) {
-                document.getElementById("best-s1").textContent = 
-                    formatTime(data.sessionBestSectors[1]) || "-";
-                document.getElementById("best-s2").textContent = 
-                    formatTime(data.sessionBestSectors[2]) || "-";
-                document.getElementById("best-s3").textContent = 
-                    formatTime(data.sessionBestSectors[3]) || "-";
-            }
-        }
-
-        // Debug console functions
-        function debugLog(message, type = 'info') {
-            const console_el = document.getElementById("debug-console");
-            const timestamp = new Date().toLocaleTimeString();
-            const prefix = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : 'ℹ️';
-            const line = document.createElement('div');
-            line.textContent = `[${timestamp}] ${prefix} ${message}`;
-            line.className = type === 'error' ? 'text-red-400' : type === 'warn' ? 'text-yellow-400' : 'text-green-400';
-            console_el.appendChild(line);
-            console_el.scrollTop = console_el.scrollHeight;
-            
-            // Keep only last 50 lines to prevent memory issues
-            const lines = console_el.querySelectorAll('div');
-            if (lines.length > 50) {
-                lines[0].remove();
-            }
-        }
-
-        function clearDebugLog() {
-            document.getElementById("debug-console").innerHTML = '';
-        }
-
-        // Override console methods to show in debug console
-        const originalLog = console.log;
-        const originalError = console.error;
-        const originalWarn = console.warn;
-
-        console.log = function(...args) {
-            debugLog(args.join(' '), 'info');
-            originalLog.apply(console, args);
-        };
-
-        console.error = function(...args) {
-            debugLog(args.join(' '), 'error');
-            originalError.apply(console, args);
-        };
-
-        console.warn = function(...args) {
-            debugLog(args.join(' '), 'warn');
-            originalWarn.apply(console, args);
-        };
-    </script>
+    <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,29 +1,27 @@
-using System.Net.Sockets;
-using System.Runtime.InteropServices;
+using LfsPitWall.Server.Helpers;
+using LfsPitWall.Server.InSim;
 using LfsPitWall.Server.Models;
 
 namespace LfsPitWall.Server.Services;
 
 /// <summary>
-/// InSim service - Background service managing TCP connection to LFS
-/// Handles initialization handshake, packet receiving, and keep-alive logic.
+/// Background service managing the LFS InSim connection.
+/// Handles initialization handshake, packet receiving, keep-alive, and packet handler registration.
 /// </summary>
 public class InSimService : BackgroundService
 {
     private readonly ILogger<InSimService> _logger;
     private readonly RaceSession _raceSession;
+    private readonly PacketDispatcher _dispatcher;
     private readonly string _host;
     private readonly int _port;
     private readonly string _adminPassword;
     private readonly string _insimName;
 
-    private TcpClient? _client;
-    private NetworkStream? _stream;
+    private InSimConnection? _connection;
     private PeriodicTimer? _keepAliveTimer;
 
     private const int KeepAliveIntervalMs = 30000;
-    private const int ConnectionTimeoutMs = 10000;
-    private const int StreamTimeoutMs = 5000;
 
     public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession)
     {
@@ -33,7 +31,43 @@ public class InSimService : BackgroundService
         _port = int.TryParse(configuration["InSim:Port"], out var p) ? p : 29999;
         _adminPassword = configuration["InSim:AdminPassword"] ?? string.Empty;
         _insimName = configuration["InSim:Name"] ?? "LFS Pit Wall";
+
+        _dispatcher = new PacketDispatcher(_logger);
+        RegisterHandlers();
     }
+
+    // ── Packet Handler Registration ───────────────────────
+
+    private void RegisterHandlers()
+    {
+        // Core session management
+        _dispatcher.Bind<IS_STA>(InSimPacketType.ISP_STA, HandleSessionState);
+        _dispatcher.Bind<IS_RST>(InSimPacketType.ISP_RST, HandleRaceStart);
+
+        // Player lifecycle
+        _dispatcher.Bind<IS_NCN>(InSimPacketType.ISP_NCN, HandleNewConnection);
+        _dispatcher.Bind<IS_CNL>(InSimPacketType.ISP_CNL, HandleConnectionLeave);
+        _dispatcher.Bind<IS_NPL>(InSimPacketType.ISP_NPL, HandleNewPlayer);
+        _dispatcher.Bind<IS_PLL>(InSimPacketType.ISP_PLL, HandlePlayerLeave);
+
+        // Timing data
+        _dispatcher.Bind<IS_LAP>(InSimPacketType.ISP_LAP, HandleLapTime);
+        _dispatcher.Bind<IS_SPX>(InSimPacketType.ISP_SPX, HandleSectorTime);
+        _dispatcher.Bind<IS_MCI>(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
+
+        // Known packet types we don't need — suppress log noise
+        _dispatcher.Suppress(
+            InSimPacketType.ISP_FIN,
+            InSimPacketType.ISP_PIT,
+            InSimPacketType.ISP_PSF,
+            InSimPacketType.ISP_PEN,
+            InSimPacketType.ISP_NLP,
+            InSimPacketType.ISP_CCH,
+            InSimPacketType.ISP_UCO
+        );
+    }
+
+    // ── Service Lifecycle ─────────────────────────────────
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -58,83 +92,52 @@ public class InSimService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Establishes TCP connection to LFS and completes initialization handshake (IS_ISI -> IS_VER)
-    /// </summary>
     private async Task ConnectToLfsAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Connecting to LFS at {Host}:{Port}", _host, _port);
 
-        _client = new TcpClient();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(ConnectionTimeoutMs);
-
-        try
-        {
-            await _client.ConnectAsync(_host, _port, cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            throw new InvalidOperationException($"Failed to connect to LFS at {_host}:{_port} within {ConnectionTimeoutMs}ms");
-        }
-
-        _stream = _client.GetStream();
-        _stream.ReadTimeout = StreamTimeoutMs;
-        _stream.WriteTimeout = StreamTimeoutMs;
+        _connection = new InSimConnection();
+        await _connection.ConnectAsync(_host, _port, cancellationToken);
 
         // Send IS_ISI initialization packet
         var isiPacket = IS_ISI.CreateDefault(_insimName, _adminPassword);
-        await SendPacketAsync(isiPacket, cancellationToken);
+        await _connection.SendAsync(isiPacket, cancellationToken);
 
         // Receive and verify IS_VER response
-        var verPacket = await ReceiveIS_VERAsync(cancellationToken);
+        var verPacket = await ReceiveVersionAsync(cancellationToken);
         _logger.LogInformation(
             "✅ Connected to LFS | Version: {Version} | Product: {Product} | InSim: {InSimVer}",
             verPacket.GetVersion(), verPacket.GetProduct(), verPacket.InSimVer);
 
-        // Request player/connection/result info to get complete picture
-        await SendInfoRequestsAsync();
+        await RequestInitialDataAsync();
 
-        // Start keep-alive timer
         _keepAliveTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(KeepAliveIntervalMs));
     }
 
-    /// <summary>
-    /// Receives IS_VER packet, validates header, and deserializes response
-    /// </summary>
-    private async Task<IS_VER> ReceiveIS_VERAsync(CancellationToken cancellationToken)
+    private async Task<IS_VER> ReceiveVersionAsync(CancellationToken cancellationToken)
     {
-        var header = await ReadExactAsync(4, cancellationToken);
+        var header = await _connection!.ReadExactAsync(4, cancellationToken);
 
         byte packetType = header[1];
         if (packetType != (byte)InSimPacketType.ISP_VER)
-        {
             throw new InvalidOperationException($"Expected IS_VER (type 2), got type {packetType}");
-        }
 
-        var remaining = await ReadExactAsync(16, cancellationToken);
+        var remaining = await _connection.ReadExactAsync(16, cancellationToken);
         var fullPacket = new byte[20];
         Array.Copy(header, fullPacket, 4);
         Array.Copy(remaining, 0, fullPacket, 4, 16);
 
-        return BytesToStruct<IS_VER>(fullPacket);
+        return InSimConnection.BytesToStruct<IS_VER>(fullPacket);
     }
 
-    /// <summary>
-    /// Listens for packets from LFS with simultaneous keep-alive sending
-    /// </summary>
+    // ── Packet Receive Loop ───────────────────────────────
     private async Task ListenForPacketsAsync(CancellationToken cancellationToken)
     {
         var keepAliveTask = ProcessKeepAliveAsync(cancellationToken);
         var receiveTask = ReceivePacketsLoopAsync(cancellationToken);
-
-        // Exit when either task completes (error or cancellation)
         await Task.WhenAny(keepAliveTask, receiveTask);
     }
 
-    /// <summary>
-    /// Periodically sends IS_TINY keep-alive packets to LFS
-    /// </summary>
     private async Task ProcessKeepAliveAsync(CancellationToken cancellationToken)
     {
         if (_keepAliveTimer == null) return;
@@ -143,67 +146,47 @@ public class InSimService : BackgroundService
         {
             while (await _keepAliveTimer.WaitForNextTickAsync(cancellationToken))
             {
-                if (_stream?.CanWrite == true)
-                {
-                    await SendPacketAsync(IS_TINY.CreateKeepAlive(), cancellationToken);
-                }
+                if (_connection?.IsConnected == true)
+                    await _connection.SendAsync(IS_TINY.CreateKeepAlive(), cancellationToken);
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Expected on shutdown
-        }
+        catch (OperationCanceledException) { }
     }
 
-    /// <summary>
-    /// Main receive loop - processes all packet types from LFS
-    /// </summary>
     private async Task ReceivePacketsLoopAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            try
+            var header = await _connection!.ReadExactAsync(4, cancellationToken);
+            byte packetType = header[1];
+            byte packetSize = header[0];
+
+            // TINY packets are exactly 4 bytes — handle inline
+            if (packetType == (byte)InSimPacketType.ISP_TINY)
             {
-                var header = await ReadExactAsync(4, cancellationToken);
-                byte packetType = header[1];
-                byte packetSize = header[0];
-
-                // Handle TINY packets (4 bytes) inline
-                if (packetType == (byte)InSimPacketType.ISP_TINY)
-                {
-                    ProcessTinyPacket(header[3]);
-                    continue;
-                }
-
-                // Read remaining packet bytes if necessary
-                if (packetSize > 1) // Size is in units of 4, so > 1 means > 4 bytes total
-                {
-                    int remainingSize = (packetSize * 4) - 4;
-                    var remaining = await ReadExactAsync(remainingSize, cancellationToken);
-                    var fullPacket = new byte[packetSize * 4];
-                    Array.Copy(header, fullPacket, 4);
-                    Array.Copy(remaining, 0, fullPacket, 4, remainingSize);
-
-                    // Route to specific packet handler based on packetType
-                    await HandlePacketAsync((InSimPacketType)packetType, fullPacket, cancellationToken);
-                }
+                ProcessTinyPacket(header[3]);
+                continue;
             }
-            catch (IOException)
+
+            // Read remaining bytes and dispatch to registered handler
+            if (packetSize > 1)
             {
-                throw; // Connection lost
+                int remainingSize = (packetSize * 4) - 4;
+                var remaining = await _connection.ReadExactAsync(remainingSize, cancellationToken);
+                var fullPacket = new byte[packetSize * 4];
+                Array.Copy(header, fullPacket, 4);
+                Array.Copy(remaining, 0, fullPacket, 4, remainingSize);
+
+                _dispatcher.Dispatch((InSimPacketType)packetType, fullPacket);
             }
         }
     }
 
-    /// <summary>
-    /// Processes TINY packet subtypes
-    /// </summary>
     private void ProcessTinyPacket(byte subType)
     {
         switch ((TinyPacketType)subType)
         {
             case TinyPacketType.TINY_NONE:
-                // Keep-alive from LFS - no action needed
                 break;
             case TinyPacketType.TINY_REPLY:
                 _logger.LogDebug("Ping reply from LFS");
@@ -214,128 +197,44 @@ public class InSimService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Sends a packet to LFS (any struct with [StructLayout] attribute)
-    /// </summary>
-    private async Task SendPacketAsync<T>(T packet, CancellationToken cancellationToken) where T : struct
-    {
-        var bytes = StructToBytes(packet);
-        await _stream!.WriteAsync(bytes, 0, bytes.Length, cancellationToken);
-        await _stream.FlushAsync(cancellationToken);
-    }
+    // ── Data Requests ─────────────────────────────────────
 
-    /// <summary>
-    /// Reads exactly the specified number of bytes from stream
-    /// </summary>
-    private async Task<byte[]> ReadExactAsync(int count, CancellationToken cancellationToken)
-    {
-        var buffer = new byte[count];
-        int totalRead = 0;
-
-        while (totalRead < count)
-        {
-            int read = await _stream!.ReadAsync(buffer, totalRead, count - totalRead, cancellationToken);
-            if (read == 0)
-                throw new InvalidOperationException("Connection closed by LFS");
-            totalRead += read;
-        }
-
-        return buffer;
-    }
-
-    /// <summary>
-    /// Serializes struct to byte array using Marshal
-    /// </summary>
-    private static byte[] StructToBytes<T>(T structure) where T : struct
-    {
-        int size = Marshal.SizeOf<T>();
-        byte[] buffer = new byte[size];
-        GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-
-        try
-        {
-            Marshal.StructureToPtr(structure, handle.AddrOfPinnedObject(), false);
-            return buffer;
-        }
-        finally
-        {
-            handle.Free();
-        }
-    }
-
-    /// <summary>
-    /// Deserializes byte array to struct using Marshal
-    /// </summary>
-    private static T BytesToStruct<T>(byte[] buffer) where T : struct
-    {
-        GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-
-        try
-        {
-            return Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
-        }
-        finally
-        {
-            handle.Free();
-        }
-    }
-
-    /// <summary>
-    /// Send information requests to LFS to get player data, connections, results, and session info.
-    /// Should be called on connection and periodically to keep data in sync.
-    /// </summary>
-    private async Task SendInfoRequestsAsync()
+    private async Task RequestInitialDataAsync()
     {
         try
         {
-            if (_stream == null || !_stream.CanWrite)
-                return;
+            if (_connection?.IsConnected != true) return;
 
             byte reqId = (byte)DateTime.Now.Ticks;
 
-            // Request: Session State (track, weather, race status, etc)
-            await SendPacketAsync(new IS_TINY 
-            { 
-                Size = 1, 
-                Type = (byte)InSimPacketType.ISP_TINY, 
-                ReqI = reqId, 
-                SubT = (byte)TinyPacketType.TINY_SST 
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_SST
             }, CancellationToken.None);
 
-            // Request: New Connections
-            await SendPacketAsync(new IS_TINY 
-            { 
-                Size = 1, 
-                Type = (byte)InSimPacketType.ISP_TINY, 
-                ReqI = reqId, 
-                SubT = (byte)TinyPacketType.TINY_NCN 
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_NCN
             }, CancellationToken.None);
 
-            // Request: New Players (including those already in race)
-            await SendPacketAsync(new IS_TINY 
-            { 
-                Size = 1, 
-                Type = (byte)InSimPacketType.ISP_TINY, 
-                ReqI = reqId, 
-                SubT = (byte)TinyPacketType.TINY_NPL 
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_NPL
             }, CancellationToken.None);
 
-            // Request: Race Start Info (track layout, laps, quali time, etc)
-            await SendPacketAsync(new IS_TINY 
-            { 
-                Size = 1, 
-                Type = (byte)InSimPacketType.ISP_TINY, 
-                ReqI = reqId, 
-                SubT = (byte)TinyPacketType.TINY_RST 
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_RST
             }, CancellationToken.None);
 
-            // Request: Results (qualify/race results)
-            await SendPacketAsync(new IS_TINY 
-            { 
-                Size = 1, 
-                Type = (byte)InSimPacketType.ISP_TINY, 
-                ReqI = reqId, 
-                SubT = (byte)TinyPacketType.TINY_RES 
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_RES
             }, CancellationToken.None);
 
             _logger.LogDebug("📤 Sent info requests: SST, NCN, NPL, RST, RES");
@@ -346,77 +245,7 @@ public class InSimService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Routes packets to appropriate handler methods based on packet type
-    /// </summary>
-    private async Task HandlePacketAsync(InSimPacketType packetType, byte[] packetData, CancellationToken cancellationToken)
-    {
-        try
-        {
-            switch (packetType)
-            {
-                case InSimPacketType.ISP_STA:
-                    HandleSessionState(BytesToStruct<IS_STA>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_MCI:
-                    HandleMultiCarInfo(BytesToStruct<IS_MCI>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_NPL:
-                    HandleNewPlayer(BytesToStruct<IS_NPL>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_NCN:
-                    HandleNewConnection(BytesToStruct<IS_NCN>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_CNL:
-                    HandleConnectionLeave(BytesToStruct<IS_CNL>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_PLL:
-                    HandlePlayerLeave(BytesToStruct<IS_PLL>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_LAP:
-                    HandleLapTime(BytesToStruct<IS_LAP>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_SPX:
-                    HandleSectorTime(BytesToStruct<IS_SPX>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_RST:
-                    HandleRaceStart(BytesToStruct<IS_RST>(packetData));
-                    break;
-
-                case InSimPacketType.ISP_FIN: // Finished race
-                case InSimPacketType.ISP_PIT: // Pit stop start
-                case InSimPacketType.ISP_PSF: // Pit stop finish  
-                case InSimPacketType.ISP_PEN: // Penalty
-                case InSimPacketType.ISP_NLP: // Node and lap packet (37) - Ignore for now
-                case InSimPacketType.ISP_CCH: // Camera changed
-                case InSimPacketType.ISP_UCO: // Unknown - try to skip
-                    _logger.LogDebug("Packet {PacketType} (suppressed)", packetType);
-                    break;
-
-                default:
-                    _logger.LogInformation("📦 OTHER Packet: {PacketType}", packetType);
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error handling packet type {PacketType}", packetType);
-        }
-
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Handles IS_MCI (Multi Car Info) packets - identifies all active cars
-    /// </summary>
+    // ── Packet Handlers ─────────────────────────────────
     private void HandleMultiCarInfo(IS_MCI packet)
     {
         for (int i = 0; i < packet.NumCars && i < packet.Cars.Length; i++)
@@ -482,22 +311,12 @@ public class InSimService : BackgroundService
     /// </summary>
     private void HandleNewPlayer(IS_NPL packet)
     {
-        // Use Latin1 encoding for car names to preserve all byte values (128-255)
-        // as ASCII doesn't handle high bytes well for mod cars
-        var encoding = System.Text.Encoding.GetEncoding("iso-8859-1"); // Latin1
-        
+        var encoding = System.Text.Encoding.GetEncoding("iso-8859-1");
+
         var playerName = System.Text.Encoding.ASCII.GetString(packet.PName).TrimEnd('\0').Trim();
-        
-        // Format player name: extract group prefix if present (e.g., "SRP Kamileon" → "/SRP/ Kamileon")
-        var formattedName = FormatPlayerName(playerName);
-        
-        // Parse CName: for old cars it's a string (XRG, XFG, RB4, etc)
-        // For mods it's a little-endian 3-byte ID that should be displayed as hex (e.g., 38A066)
-        string carName = ParseCarName(packet.CName);
-        
+        var formattedName = DriverNameHelper.FormatPlayerName(playerName);
+        string carName = DriverNameHelper.ParseCarName(packet.CName);
         var skinName = encoding.GetString(packet.SName).TrimEnd('\0').Trim();
-        
-        // Get LFS username if available (from IS_NCN mapping)
         var username = _raceSession.GetUsername(packet.UCID) ?? "";
 
         // Get existing driver if it exists, else create new
@@ -581,13 +400,13 @@ public class InSimService : BackgroundService
             _logger.LogDebug("Auto-created placeholder driver for ID: {PLID}", packet.PLID);
             
             // Request player info
-            _ = SendInfoRequestsAsync();
+            _ = RequestInitialDataAsync();
         }
         else if (driver.Name.StartsWith("Unknown Driver") || driver.Name.StartsWith("Driver #"))
         {
             // Driver still has placeholder name
             _logger.LogDebug("Lap from unknown driver ID {PLID}, requesting info", packet.PLID);
-            _ = SendInfoRequestsAsync();
+            _ = RequestInitialDataAsync();
         }
 
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
@@ -749,123 +568,20 @@ public class InSimService : BackgroundService
             packet.Wind switch { 0 => "Off", 1 => "Weak", 2 => "Strong", _ => "Unknown" });
     }
 
-    /// <summary>
-    /// Formats player name: extracts group prefix and wraps in slashes
-    /// Example: "SRP Kamileon" → "/SRP/ Kamileon"
-    /// Names with brackets or slashes are kept as-is: "[FM]TJ" → "[FM]TJ"
-    /// </summary>
-    private string FormatPlayerName(string name)
-    {
-        _logger.LogDebug("🏷️ FormatPlayerName input: '{Name}'", name);
-        
-        if (string.IsNullOrWhiteSpace(name))
-            return name;
+    // ── Connection Cleanup ──────────────────────────────
 
-        // If already has special prefix characters, keep as-is
-        if (name.StartsWith("[") || name.StartsWith("/") || name.StartsWith("<"))
-        {
-            _logger.LogDebug("🏷️ -> Skipping (has prefix chars): '{Name}'", name);
-            return name;
-        }
-
-        // Try to extract group prefix (word before first space)
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
-        {
-            var prefix = parts[0];
-            
-            // Check if prefix is a valid group name (uppercase letters/digits only, reasonable length)
-            bool isValidGroupName = !string.IsNullOrEmpty(prefix) && 
-                                   prefix.Length <= 10 && 
-                                   prefix.All(c => char.IsLetterOrDigit(c));
-
-            if (isValidGroupName)
-            {
-                // Extract remaining name, replace multiple spaces with single space
-                string rest = string.Join(" ", parts.Skip(1));
-                string formatted = $"/{prefix}/ {rest}";
-                _logger.LogDebug("🏷️ Formatted: '{OldName}' → '{NewName}'", name, formatted);
-                return formatted;
-            }
-            else
-            {
-                _logger.LogDebug("🏷️ -> Not valid group: '{Prefix}' (len={Len}, isAlphaNum={IsAlphaNum})", 
-                    prefix, prefix.Length, prefix.All(c => char.IsLetterOrDigit(c)));
-            }
-        }
-        else
-        {
-            _logger.LogDebug("🏷️ -> Single word or empty: parts.Length={Len}", parts.Length);
-        }
-
-        return name;
-    }
-
-    /// <summary>
-    /// Parses CName from IS_NPL packet. For old cars (XRG, XFG, RB4) it's ASCII string.
-    /// For mods it's a little-endian 3-byte ID that should be displayed as hexadecimal.
-    /// </summary>
-    private string ParseCarName(byte[] cname)
-    {
-        // Check if this looks like a printable ASCII string (old car names)
-        // Old car names are uppercase ASCII like "XRG", "XFG", "RB4", "LX4", etc.
-        bool isAsciiString = true;
-        for (int i = 0; i < cname.Length - 1; i++) // Skip last byte (null terminator)
-        {
-            byte b = cname[i];
-            if (b == 0) break; // End of string
-            
-            // Check if it's a printable ASCII character
-            if (b < 32 || b > 126)
-            {
-                isAsciiString = false;
-                break;
-            }
-        }
-        
-        if (isAsciiString)
-        {
-            // Old car - decode as ASCII string
-            var result = System.Text.Encoding.ASCII.GetString(cname).TrimEnd('\0').Trim();
-            return string.IsNullOrEmpty(result) ? "???" : result;
-        }
-        else
-        {
-            // Mod car - parse as little-endian 3-byte ID and display as hex
-            // e.g., bytes [0x66, 0xA0, 0x38, 0x00] → 0x38A066 → "38A066"
-            uint modId = cname[0] | ((uint)cname[1] << 8) | ((uint)cname[2] << 16);
-            return modId.ToString("X6");
-        }
-    }
-
-    /// <summary>
-    /// Closes connection and cleans up resources
-    /// </summary>
     private async Task CloseConnectionAsync()
     {
-        try
-        {
-            _keepAliveTimer?.Dispose();
-            _keepAliveTimer = null;
+        _keepAliveTimer?.Dispose();
+        _keepAliveTimer = null;
 
-            if (_stream != null)
-            {
-                await _stream.FlushAsync();
-                _stream.Dispose();
-            }
-
-            _client?.Dispose();
-            _client = null;
-        }
-        catch (Exception ex)
+        if (_connection != null)
         {
-            _logger.LogWarning(ex, "Error closing connection");
+            await _connection.DisposeAsync();
+            _connection = null;
         }
     }
 
-    /// <summary>
-    /// Override to ensure cleanup on service stop
-    /// </summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await CloseConnectionAsync();
