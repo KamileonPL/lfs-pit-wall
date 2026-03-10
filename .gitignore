@@ -5,6 +5,7 @@
 
 # Local configuration
 LfsPitWall.Server/appsettings.Development.json
+Docs/AppArchitecture.md
 
 # dotenv files
 .env
@@ -485,3 +486,4 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+

@@ -89,6 +89,18 @@ public enum TinyPacketType : byte
     TINY_CLOSE = 2,    // Close InSim
     TINY_PING = 3,     // Ping request
     TINY_REPLY = 4,    // Ping reply
+    TINY_VTC = 5,      // Vote cancel
+    TINY_SCP = 6,      // Send camera pos
+    TINY_SST = 7,      // Send state info
+    TINY_GTM = 8,      // Get time in ms
+    TINY_MPE = 9,      // Multi player end
+    TINY_ISM = 10,     // Get multiplayer info
+    TINY_REN = 11,     // Race end
+    TINY_CLR = 12,     // All players cleared
+    TINY_NCN = 13,     // Get NCN for all connections
+    TINY_NPL = 14,     // Get all players
+    TINY_RES = 15,     // Get all results
+    TINY_RST = 19,     // Get race start info
 }
 
 /// <summary>
@@ -243,4 +255,278 @@ public struct IS_TINY
             SubT = (byte)TinyPacketType.TINY_NONE
         };
     }
+
+    /// <summary>
+    /// Creates a request TINY packet for specific subtype
+    /// </summary>
+    public static IS_TINY CreateRequest(TinyPacketType subType)
+    {
+        return new IS_TINY
+        {
+            Size = 1,
+            Type = (byte)InSimPacketType.ISP_TINY,
+            ReqI = 0,
+            SubT = (byte)subType
+        };
+    }
+}
+
+/// <summary>
+/// Session State packet - reports current session state (28 bytes)
+/// Reply to TINY_SST request
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_STA
+{
+    public byte Size;                    // 28
+    public byte Type;                    // ISP_STA
+    public byte ReqI;                    // ReqI if replying to request
+    public byte Zero;                    // 0
+
+    public float ReplaySpeed;            // 1.0 is normal speed
+
+    public ushort Flags;                 // ISS state flags
+    public byte InGameCam;               // Which camera is selected
+    public byte ViewPLID;                // Unique ID of viewed player (0 = none)
+
+    public byte NumP;                    // Number of players in race
+    public byte NumConns;                // Number of connections including host
+    public byte NumFinished;             // Number finished or qualified
+    public byte RaceInProg;              // 0 = no race / 1 = race / 2 = qualifying
+
+    public byte QualMins;                // Qualifying minutes
+    public byte RaceLaps;                // Race laps
+    public byte Sp2;                     // Spare
+    public byte ServerStatus;            // 0 = unknown / 1 = success / > 1 = fail
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
+    public byte[] Track;                 // Track name (6 chars, e.g. FE2R)
+
+    public byte Weather;                 // 0, 1, 2...
+    public byte Wind;                    // 0 = off / 1 = weak / 2 = strong
+}
+
+/// <summary>
+/// Race Start packet - reports race/qualifying start info (28 bytes)
+/// Reply to TINY_RST request
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_RST
+{
+    public byte Size;                    // 28
+    public byte Type;                    // ISP_RST
+    public byte ReqI;                    // 0 unless reply to TINY_RST request
+    public byte Zero;                    // 0
+
+    public byte RaceLaps;                // 0 if qualifying
+    public byte QualMins;                // 0 if racing
+    public byte NumP;                    // Number of players in race
+    public byte Timing;                  // Lap timing mode (see bits 0-1 and 6-7)
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
+    public byte[] Track;                 // Track name (e.g., FE2R)
+
+    public byte Weather;                 // 0, 1, 2...
+    public byte Wind;                    // 0 = off / 1 = weak / 2 = strong
+
+    public ushort Flags;                 // Race flags (HOSTF_x)
+    public ushort NumNodes;              // Total number of nodes in track path
+    public ushort Finish;                // Node index - finish line
+    public ushort Split1;                // Node index - split 1
+    public ushort Split2;                // Node index - split 2
+    public ushort Split3;                // Node index - split 3
+}
+
+/// <summary>
+/// New Player packet - sent when a player joins the race
+/// Physical size: 76 bytes, but Size field = 76 / 4 = 19 (INSIM_VERSION 10+)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_NPL
+{
+    public byte Size;                    // 76
+    public byte Type;                    // ISP_NPL
+    public byte ReqI;                    // 0 unless this is a reply to an TINY_NPL request
+    public byte PLID;                    // player's newly assigned unique id
+
+    public byte UCID;                    // connection's unique id
+    public byte PType;                   // bit 0: female / bit 1: AI / bit 2: remote
+    public ushort Flags;                 // player flags
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)]
+    public byte[] PName;                 // nickname
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+    public byte[] Plate;                 // number plate - NO ZERO AT END!
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
+    public byte[] CName;                 // car name
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+    public byte[] SName;                 // skin name
+
+    public byte Tyres0;                  // Tyre compound for wheel 0 (FL)
+    public byte Tyres1;                  // Tyre compound for wheel 1 (FR)
+    public byte Tyres2;                  // Tyre compound for wheel 2 (RL)
+    public byte Tyres3;                  // Tyre compound for wheel 3 (RR)
+
+    public byte H_Mass;                  // Added mass (kg)
+    public byte H_TRes;                  // Traction restrictions (%)
+    public byte Model;                   // Driver model: 0=others view, 1=own view, 2=first person
+    public byte Pass;                    // Passengers byte
+
+    public byte RWAdj;                   // low 4 bits: tyre width reduction (rear)
+    public byte FWAdj;                   // low 4 bits: tyre width reduction (front)
+    public byte Sp2;                     // Spare
+    public byte Sp3;                     // Spare
+
+    public byte SetF;                    // Setup flags
+    public byte NumP;                    // Number in race (0 if join request)
+    public byte Config;                  // Configuration
+    public byte Fuel;                    // Fuel percent or 255
+}
+
+/// <summary>
+/// Player Leave packet - sent when a player leaves the race
+/// Physical size: 4 bytes, but Size field = 4 / 4 = 1 (INSIM_VERSION 10+)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_PLL
+{
+    public byte Size;                    // 1 (4 / 4)
+    public byte Type;                    // ISP_PLL
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID
+}
+
+/// <summary>
+/// Lap Time packet - sent when a player completes a lap (20 bytes)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_LAP
+{
+    public byte Size;                    // 20
+    public byte Type;                    // ISP_LAP
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID
+
+    public uint LTime;                   // Lap time (ms)
+    public uint ETime;                   // Total elapsed time (ms)
+
+    public ushort LapsDone;              // Laps completed
+    public ushort Flags;                 // Player flags
+
+    public byte Sp0;                     // Spare
+    public byte Penalty;                 // Current penalty value (PENALTY_x)
+    public byte NumStops;                // Number of pit stops
+    public byte Fuel200;                 // Fuel: if 255 then disabled, else actual_fuel = Fuel200 / 2
+}
+
+/// <summary>
+/// Split Time packet - sent when a player crosses sector splits (16 bytes)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_SPX
+{
+    public byte Size;                    // 16
+    public byte Type;                    // ISP_SPX
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID
+
+    public uint STime;                   // Split time (ms)
+    public uint ETime;                   // Total elapsed time (ms)
+
+    public byte Split;                   // Split number (1, 2, 3)
+    public byte Penalty;                 // Current penalty value (PENALTY_x)
+    public byte NumStops;                // Number of pit stops
+    public byte Fuel200;                 // Fuel: if 255 then disabled, else actual_fuel = Fuel200 / 2
+}
+
+/// <summary>
+/// New Connection packet - sent when a player connects to the host
+/// Physical size: 56 bytes (Size = 14)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_NCN
+{
+    public byte Size;                    // 14 (56 / 4)
+    public byte Type;                    // ISP_NCN
+    public byte ReqI;                    // 0 unless reply to TINY_NCN request
+    public byte UCID;                    // Unique Connection ID (0 = host)
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)]
+    public byte[] UName;                 // Username (24 bytes)
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)]
+    public byte[] PName;                 // Nickname/Player name (24 bytes)
+
+    public byte Admin;                   // 1 if admin
+    public byte Total;                   // Total connections including host
+    public byte Flags;                   // Connection flags
+    public byte Sp3;                     // Spare
+}
+
+/// <summary>
+/// Connection Leave packet - sent when a player disconnects from the host
+/// Physical size: 8 bytes (Size = 2)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_CNL
+{
+    public byte Size;                    // 2 (8 / 4)
+    public byte Type;                    // ISP_CNL
+    public byte ReqI;                    // 0
+    public byte UCID;                    // Connection's unique ID that left
+
+    public byte Reason;                  // Leave reason
+    public byte Total;                   // Total connections remaining
+    public byte Sp2;                     // Spare
+    public byte Sp3;                     // Spare
+}
+
+/// <summary>
+/// Result packet - sent for race results or qualifying results
+/// Physical size: 76 bytes (Size = 19)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_RES
+{
+    public byte Size;                    // 19 (76 / 4)
+    public byte Type;                    // ISP_RES
+    public byte ReqI;                    // 0 unless reply to TINY_RES request
+    public byte PLID;                    // Player ID
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)]
+    public byte[] PName;                 // Player name
+
+    public byte Mode;                    // Mode (0=qualifying, 1=race)
+    public byte Gear;                    // Final gear
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
+    public byte[] Spare;                 // Spare bytes
+}
+
+/// <summary>
+/// Car state info structure (used in IS_MCI packet)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct CompCar
+{
+    public byte PLID;                    // Player ID or 0 if empty slot
+    public byte Speed;                   // Speed in MPH * 50 (0-5828)
+}
+
+/// <summary>
+/// Multi Car Info packet - contains brief info on multiple cars every 200ms (if ISF_MCI enabled)
+/// Physical size: 4 + (N * 2) bytes, typically: 4 + 40*2 = 84 bytes (Size = 21)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_MCI
+{
+    public byte Size;                    // Packet size / 4 (usually 21 for 40 cars)
+    public byte Type;                    // ISP_MCI
+    public byte ReqI;                    // 0
+    public byte NumCars;                 // Number of car structures in this packet (up to 40)
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 40)]
+    public CompCar[] Cars;               // Car info Array (up to 40 cars)
 }
