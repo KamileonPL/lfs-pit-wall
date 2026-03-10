@@ -1,0 +1,442 @@
+Live for Speed command line options and text commands
+=====================================================
+
+
+Command line options:
+---------------------
+LFS can be started using a command line or another program.
+
+Before selecting host options, you may find it helpful to run LFS
+and try out the options on the Start New Host screen - the required
+upload bandwidth for those options is displayed on screen.
+
+A command line or a command file is required for dedicated hosts.
+
+List of commands:
+
+The following command, if used, must be the first command on a
+command line or the first command in a command file.
+
+/settings=X.txt      :load settings from X.txt instead of cfg.txt
+
+If the following command is used it must be before any other commands.
+
+/join=Host Name      :join an internet server
+
+The following command may only be used after /join.
+
+/pass=Pass           :if required - password
+
+The following commands are mainly for hosts but may also be used
+to override various cfg.txt settings or start InSim.
+
+/ip=X.X.X.X          :if required - local specified ip address
+/port=63392          :a high number below 65536
+/mode=demo           :demo / s1 / s2 / s3
+/usemaster=yes       :no / yes / hidden
+/track=XXCR          :track and config (e.g. BL1 / SO3R / FE4)
+/weather=1           :weather: 1,2,3 in Blackwood
+/cars=[cars]         :see below: "Car Strings"
+/maxguests=4         :max number of guests that can join host
+/adminslots=0        :slots reserved for admins (0 to 8)
+/carsmax=5           :max number of cars in a race
+/carshost=1          :max number of cars (real+ai) on host pc
+/carsguest=1         :max number of cars (real+ai) per guest pc
+/pps=4               :smoothness (3-12) max car updates per second
+/qual=0              :qualifying minutes, 0 for no qualifying
+/laps=5              :number of lap, 0 for practice
+/wind=1              :0 no wind / 1 low wind / 2 high wind
+/dedicated=no        :no / yes / nogfx / invisible
+/vote=yes            :no / yes: can guests vote to kick or ban
+/select=yes          :no / yes: can guests select track
+/rstmin=X            :no restart for X seconds after race start
+/rstend=X            :no restart for X seconds after race finish
+/autokick=no         :no / kick / ban / spec (wrong way drivers)
+/midrace=yes         :no / yes               (join during race)
+/mustpit=no          :no / yes               (pit stop required)
+/canrefuel=no        :no / yes               (refuelling allowed)
+/showfuel=no         :no / yes               (remote cars fuel visible)
+/canreset=no         :no / yes               (allow car reset)
+/fcv=no              :no / yes               (force cockpit view)
+/cruise=no           :no / yes               (allow wrong way)
+/allowmods X         :no / yes               (allow mods)
+/unapproved X        :no / yes               (allow unapproved mods)
+/start=finish        :fixed/finish/reverse/random (default race start)
+/vr=X                :off / on / rift / openvr - avoid or enter vr mode
+/insim=PORT          :listen for InSim (PORT is between 1 and 65535)
+/player=Name         :use the specified player name
+/windowed=X          :no / yes - overrides the cfg.txt setting
+/autosave=0          :MPR autosave (0-no / 1-manual / 2-auto)
+/mprdir=X            :set the data folder for mpr saving
+/lytdir=X            :set the data folder for layouts
+
+You can use a command file xxx.txt instead of a long command line.
+The command file contains the command line parameters.
+The parameters can be spread onto several lines.
+The command file can contain comments, starting with two slashes //
+Then the command line would be simply:
+
+LFS.exe /cfg=xxx.txt (where xxx.txt is the name of the config file)
+
+
+Host commands:
+--------------
+Some text commands are intended for hosts and administrators.
+
+Simple commands with no parameter:
+
+/restart             :start a race
+/qualify             :start qualifying
+/end                 :return to race setup screen
+/help                :get list of commands
+/ck                  :cancel any kick or ban votes in progress
+/cv                  :cancel game votes (restart / end / qualify)
+/zero_all            :reset lap counters on all cars
+
+Commands with a parameter - race setup screen:
+
+/track XXCR [W]      :track and config      (e.g. BL1 / SO3R / FE4)
+/weather W           :lighting              (W = 1, 2, 3...)
+/qual X              :qualifying minutes    (0 = no qualifying)
+/laps X              :number of laps        (0 = practice)
+/hours X             :number of hours       (if laps not specified)
+/wind X              :0 no / 1 low / 2 high
+
+Commands with a parameter - any time:
+
+/maxguests X         :max number of guests that can join host
+/adminslots X        :slots reserved for admins (0 to 8)
+/carsmax X           :max number of cars in a race
+/carshost X          :max number of cars (real+ai) on host pc
+/carsguest X         :max number of cars (real+ai) per guest pc
+/pps X               :smoothness (3-12) maximum car updates per second
+/msg X               :send system message
+/vote X              :no / yes                    (allow guest voting)
+/select X            :no / yes                    (guests select track)
+/rstmin X            :no restart for X seconds after race start
+/rstend X            :no restart for X seconds after race finish
+/specdnf X           :result blockers spectate with DNF after X seconds
+/autokick X          :no / kick / ban / spec      (wrong way drivers)
+/midrace X           :no / yes                    (join during race)
+/mustpit X           :no / yes                    (pit stop required)
+/canrefuel X         :no / yes                    (refuelling allowed)
+/showfuel X          :no / yes                    (remote fuel gauges)
+/canreset X          :no / yes                    (allow car reset)
+/fcv X               :no / yes                    (force cockpit view)
+/cruise X            :no / yes                    (allow wrong way)
+/allowmods X         :no / yes                    (allow mods)
+/unapproved X        :no / yes                    (unapproved mods)
+/start X             :fixed/finish/reverse/random (default race start)
+/pass X              :set new password            (BLANK = no password)
+/setlap   USERNAME Y :set user's current lap to Y (negative = subtract)
+/setstops USERNAME Y :set user's number of stops to Y
+/cansiren USERNAME Y :allow or disallow siren     (Y = 0 or 1)
+/ujoin    USERNAME   :adds user to the race
+/uai      USERNAME   :adds user's AI driver to the race
+/cars [cars]         :see below: "Car Strings"
+/mods [mods]         :see below: "Mods"
+/enforce             :spectate anyone who is driving a disallowed car
+/welcome X.txt       :set welcome text file
+/tracks X.txt        :set list of allowed tracks
+/autosave X          :MPR autosave (0-no / 1-manual / 2-auto)
+/save_mpr X          :save MPR with name X (autosave must be 1 or 2)
+/mprflush X          :flush mpr to file every X seconds (0 = disable)
+/ndebug X            :no / yes (network debug)
+/h_mass username X   :set added mass for user's car
+/h_tres username X   :set restriction for user's car
+/teamarrows=no/yes   :arrows on non-race small map use name colour
+
+Autocross layout commands:
+
+/axlist X            :get list of layouts for track X - e.g. AU1
+/axload X            :load layout X on host
+/axsave X            :save layout X on host
+/axlaps X            :set autocross number of laps
+/axclear             :clear layout
+
+Ban / Kick / Spectate commands - any time:
+
+/spec X              :make user X join the spectators
+/kick X              :disconnect user X
+/ban X Y             :ban user X for Y days (0 = 12 hours)
+/unban X             :remove ban on user X
+/pitlane X           :send user X to the pit lane
+/pit_all             :send all cars to the pit lane
+
+Penalties:
+
+/p_dt USERNAME       :give drive through penalty
+/p_sg USERNAME       :give stop-go penalty
+/p_30 USERNAME       :give 30 second time penalty
+/p_45 USERNAME       :give 45 second time penalty
+/p_clear USERNAME    :clear a time or pit penalty
+
+Race Control Messages (big text in centre of screen):
+
+/rcm MESSAGE         :set a Race Control Message to be sent
+/rcm_ply USERNAME    :send the RCM to USERNAME
+/rcm_all             :send the RCM to all
+/rcc_ply USERNAME    :clear USERNAME's RCM
+/rcc_all             :clear all RCMs
+
+
+Local commands:
+---------------
+Most of these text commands replicate functions usually controlled by
+pressing on-screen buttons but can be useful in other situations, for
+example when controlling LFS from an external program using InSim.
+
+Race setup screen only:
+
+/ready               :set ready
+/cancel              :cancel ready
+/clear               :clear all racers from list
+
+Race setup screen or in game:
+
+/car XXX             :select car (e.g. XRT)
+/setup  [X]          :select setup X (default if no X)
+/colour [X]          :select colour X (default if no X)
+/join                :join the race
+/ai     [NAME]       :add ai driver (can specify NAME)
+/spec                :spectate or leave grid
+/leave               :disconnect from host
+/player X            :select existing player X
+/lang X              :load language X (data\language\X.txt)
+/horn X              :select horn type X (1 to 5)
+/siren off/slow/fast :switch siren (if allowed by host)
+/cp                  :copy free view text to clipboard
+/cp X                :restore previously copied free view
+/axsel               :copy selected objects text to clipboard
+/aiskill             :set AI skill level (for adding AI)
+/aiset NAME X        :set AI driver to skill level X (1 to 5)
+/aiset_all X         :set all local AI drivers to skill level X
+
+Mode / replay control:
+
+/spr X               :run a SP replay from entry (front end) screen
+/mpr X               :run a MP replay from entry (front end) screen
+/end                 :exit from replay back to entry screen
+/sp                  :go into single player from entry screen
+/mp IP Port          :join a local server from entry screen
+/join Host Name      :join an internet server from entry screen
+/mprlag X            :simulate packet delay of X ms (+ no smoothing)
+/mprsmooth X         :0 / 1 (disable or enable input smoothing)
+
+Any time:
+
+/exit                :exit LFS
+/entry               :return to entry screen
+/spectv no/yes       :auto select TV camera on spectate
+/speedreduce X       :total speed steer reduction (0 to 1)
+/reducehalf X        :speed in m/s for half of reduction
+/loadkb X            :load kb settings file (data\misc\X.kbs)
+/savekb X            :save kb settings file (data\misc\X.kbs)
+/out X               :only seen by external programs
+/log X.txt           :set message log file
+/refresh             :refresh list of setups / hosts / replays
+/rsh                 :reload shaders
+/rtex                :reload textures
+/window X Y          :set window client area width and height
+/window [min/max/monitor/virtual] - adjust window (no param = restore)
+
+In game:
+
+/status none|F9|F10|F11|F12|next|prev - sets status screen
+E.g. /status next will cycle through the F9 to F12 status screens
+(you could assign it to a CTRL+ or ALT+ key and then a wheel button)
+
+/light ind [off/left/right/all] - switch indicators/hazard
+/light head [off/side/low/high/low_off/low_high/next/prev]
+/light [rfog/ffog/extra] [off/on/toggle] - switch fog/extra
+/light all [off/on] - all switchable lights off/on at once
+
+F11 and F12 menus: /liveset and /pitins
+
+You can use operators:
+= (set value)
++= (add to value)
+-= (subtract from value)
+
+Examples:
+/pitins ftyre = r3 : change front tyres to R3 in pit stop
+/pitins rtyre = super : change rear tyres to road super
+/pitins fpressure = 1.1 : set front tyre pressure to 1.1 bar
+/pitins fpressure += 0.1 : increase requested pressure by 0.1 bar
+/pitins cancel : cancel all pit instructions
+/pitins tyres always : change all tyres
+/pitins tyres 20 : change tyres if wear > 20%
+/liveset bbal 60 : set brake balance to 60%
+/liveset rarb -= 0.1 : decrease rear ant-roll bar by 0.1
+
+Available options for /pitins:
+fuel, tyres, repair, symmetric
+ftyre, fcamber_l, fpressure_l, fcamber_r, fpressure_r, fwing
+rtyre, rcamber_l, rpressure_l, rcamber_r, rpressure_r, rwing
+cancel, fcamber, fpressure, rcamber, rpressure
+
+/pitins pressure commands can accept unit (psi/bar) (no unit = bar)
+E.g. /pitins fpressure 30 psi
+
+Available options for /liveset:
+bbal, farb, rarb
+
+Useful commands for scripts and controller buttons:
+
+/run X               :run the script X     (data\script\X.lfs)
+/exec E C            :run program E        (with command line C)
+/wait E C            :like exec but LFS hangs until E exits
+
+/fov        [degrees]               - field of view
+/vlock      [car/filter/horizon]    - view lock
+/lookf      [joystick/axis/steer/mouse_x/mouse_xy]
+/control    [mouse_kb/wheel_js]     - controller type
+/ff         [0-200]                 - force feedback strength
+/axis       [axis]   [function]     - e.g. /axis 2 throttle   (see below)
+/invert     [0/1]    [function]     - e.g. /invert 1 brake    (see below)
+/button     [button] [function]     - e.g. /button 5 shift_up (see below)
+/key        [key]    [function]     - e.g. /key Q handbrake   (see below)
+/head_tilt       [degrees]  - 1g head tilt
+/lateral_shift   [m]        - 1g lateral shift
+/forward_shift   [m]        - 1g forward shift
+/vertical_shift  [m]        - 1g vertical shift
+/hidetext   [yes/no]        - hide or show text (SHIFT + F)
+/block      [0/1/2]         - block messages (none / user / all)
+/showmouse  [yes/no]        - show or hide mouse (SHIFT + Z)
+/say        [message]       - same as typing a chat message
+/echo       [text]          - show text only on local screen
+/ctrlf      [num] [text]    - change text e.g. "ctrlf 1 hello"
+/altf       [num] [text]    - change text e.g. "altf 1 bye"
+/wheel_turn [degrees]       - specify turn angle of controller
+/press      [key]           - simulate key press (see PARAMETERS)
+/shift      [key]           - SHIFT + key
+/ctrl       [key]           - CTRL + key
+/alt        [key]           - ALT + key
+/autoclutch [0-1]           - turn autoclutch off / on
+
+/shifter    [auto/sequential/shifter]    - shift type
+/view       [fol/heli/cam/driver/custom] - select view
+
+/vr reset                       - position and orientation (default F8)
+/vr reset_headset               - instantly reset headset position
+/vr use_relative                - instantly use relative position
+/vr [on/off/toggle/rift/openvr] - instantly enter or leave vr mode
+
+/view save                  - save any changes made to a custom view
+/view reload                - reload custom view (without saving)
+
+IN A SCRIPT: //comment - this line is ignored
+IN CHAT BOX: //xxx - short for /run xxx
+
+
+To get info from LFS World - /w and /ws commands:
+-------------------------------------------------
+  /w CMD sends command to LFS World for current car/track
+  e.g.  /w pb  (Personal Best)  or  /w laps  (Laps)
+
+  /ws TRACK CAR CMD sends command for specified car/track
+  e.g.  /ws BL1R XRT pb  (get PB in XR GT TURBO at Blackwood GP REV)
+
+  More online DB access commands: https://en.lfsmanual.net/wiki/Keys
+
+To get info from master server - /m command:
+
+  /m find USER - find a user online
+  /m ?         - get a list of master commands
+
+
+Car Strings:
+------------
+The /cars command for hosts or admins uses 3-character car codes.
+
+/cars=XFG+XRG        :allow XF GTI and XR GT
+/cars=MRT            :allow MRT5 only
+
+These Car Groups can be used as well:
+
+ALL    - all cars
+ROAD   - road legal cars
+RACE   - race cars
+TBO    - same as XRT+RB4+FXO
+LRF    - same as LX6+RAC+FZ5
+GTR    - same as FXR+XRR+FZR
+
+The plus and minus symbols can be used in conjuction with these:
+
+/cars=TBO+LX4        :allow XRT, RB4, FXO and LX4
+/cars=ROAD-UF1       :allow all road cars except the UF 1000
+/cars+=XRT           :add XRT to the current list of cars
+/cars-=BF1           :disallow the BF1
+
+
+Mods:
+-----
+The /mods command for hosts or admins uses 6-character mod codes.
+
+/mods=C52608+B7B8DC  :set a list of allowed mods
+/mods+=FC2B6F        :add to list
+/mods-=C52608        :remove from list
+/mods=ALL            :remove the list and set /allowmods=yes
+/mods=NONE           :remove the list and set /allowmods=no
+
+
+KEYS for the /key command:
+--------------------------
+A to Z
+0 to 9
+space
+up, down, left, right
+pgup, pgdn
+mousel, mouser, mousem
+wheelu, wheeld
+
+
+FUNCTION NAMES for the /button AND /key COMMANDS:
+-------------------------------------------------
+steer_left, steer_right, steer_fast, steer_slow
+throttle, brake, shift_up, shift_down, clutch, handbrake
+left_view, right_view, rear_view, horn, flash, reset
+pit_speed, tc_disable, ignition, zoom_in, zoom_out
+vr_click, escape, virtual_kb, talk
+reverse, gear_1 - gear_7
+ctrl_f1 - ctrl_f12, alt_f1 - alt_f12
+
+
+FUNCTION NAMES for the /axis AND /invert COMMANDS:
+--------------------------------------------------
+steer, combined, throttle, brake
+lookh, lookp, lookr
+clutch, handbrake, shiftx, shifty
+
+
+UNASSIGNING a button or axis:
+-----------------------------
+To unassign a button or axis from a function,
+you can assign -1 to that function.
+
+Example 1: /button -1 shift_up <- unassign the shift up button
+Example 2: /axis -1 clutch     <- unassign the clutch axis
+
+
+PARAMETERS for the key commands (press / shift / ctrl / alt):
+-------------------------------------------------------------
+A to Z
+0 to 9
+F1 to F12
+up, down, left, right
+space, enter, esc, tab
+less, more, minus, plus
+
+
+Multiple commands on single line:
+---------------------------------
+Multiple commands can be added on a single line which sometimes
+can avoid the need for a script file, e.g. to set a button to
+change tyres in pit stop, you could use a double command:
+/pitins ftyre super /pitins rtyre super
+
+NOTE: some commands cannot be followed by another command:
+/say /echo /join /rcm /pass /msg /altf /ctrlf
+
+--------------------------
+www.lfs.net - 26 July 2024
