@@ -242,6 +242,7 @@ function updateSessionInfo(data) {
     document.getElementById("track-name").textContent = data.trackName || "Unknown";
     document.getElementById("session-type").textContent = data.sessionType || "-";
     document.getElementById("weather-type").textContent = data.weatherType || "-";
+    document.getElementById("wind-type").textContent = data.windType || "-";
     document.getElementById("race-status").textContent = data.raceInProgress ? "🏁 LIVE" : "Idle";
     document.getElementById("driver-count").textContent = Array.isArray(data.players) ? data.players.length : 0;
 

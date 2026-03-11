@@ -20,6 +20,7 @@ public static class SessionDataBuilder
             trackName = session.TrackName,
             sessionType = session.GetSessionTypeString(),
             weatherType = session.GetWeatherTypeString(),
+            windType = session.GetWindTypeString(),
             raceInProgress = session.RaceInProgress,
             sessionTimeMs = session.SessionTimeMs,
             maxRaceLaps = session.MaxRaceLaps,

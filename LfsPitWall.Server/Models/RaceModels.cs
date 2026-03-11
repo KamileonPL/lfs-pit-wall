@@ -415,6 +415,11 @@ public class RaceSession
     public byte WeatherType { get; set; }
 
     /// <summary>
+    /// Wind strength: 0=off, 1=weak, 2=strong
+    /// </summary>
+    public byte WindType { get; set; }
+
+    /// <summary>
     /// Race status flag: 0=green, 1=yellow, 2=blue, 3=red
     /// </summary>
     public byte RaceFlag { get; set; }
@@ -698,6 +703,7 @@ public class RaceSession
             TrackName = "Unknown";
             SessionType = 0;
             WeatherType = 0;
+            WindType = 0;
             RaceFlag = 0;
             RaceInProgress = false;
             SessionTimeMs = 0;
@@ -730,6 +736,17 @@ public class RaceSession
         0 => "Sunny",
         1 => "Cloudy",
         2 => "Rainy",
+        _ => "Unknown"
+    };
+
+    /// <summary>
+    /// Gets wind strength as string
+    /// </summary>
+    public string GetWindTypeString() => WindType switch
+    {
+        0 => "Off",
+        1 => "Weak",
+        2 => "Strong",
         _ => "Unknown"
     };
 

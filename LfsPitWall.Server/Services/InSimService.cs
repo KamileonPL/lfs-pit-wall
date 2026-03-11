@@ -316,6 +316,7 @@ public class InSimService : BackgroundService
             _raceSession.TrackName = "Unknown";
 
         _raceSession.WeatherType = packet.Weather;
+        _raceSession.WindType = packet.Wind;
         _raceSession.RaceInProgress = packet.RaceInProg == 1;
         
         // Store qualifying minutes from IS_STA
@@ -562,6 +563,7 @@ public class InSimService : BackgroundService
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
         _raceSession.TrackName = string.IsNullOrEmpty(trackName) ? "Unknown" : trackName;
         _raceSession.WeatherType = packet.Weather;
+        _raceSession.WindType = packet.Wind;
         
         // Store race parameters from IS_RST packet
         _raceSession.MaxRaceLaps = packet.RaceLaps;
@@ -581,8 +583,8 @@ public class InSimService : BackgroundService
             packet.NumP,
             packet.Timing,
             checkpointCount,
-            _raceSession.ActiveSectorCount,
-            packet.Wind switch { 0 => "Off", 1 => "Weak", 2 => "Strong", _ => "Unknown" });
+                _raceSession.ActiveSectorCount,
+                _raceSession.GetWindTypeString());
     }
 
     // ── Connection Cleanup ──────────────────────────────
