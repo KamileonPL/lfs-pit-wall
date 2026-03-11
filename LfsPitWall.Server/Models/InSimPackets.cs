@@ -162,7 +162,7 @@ public struct IS_ISI
             ReqI = 1,                                              // Request IS_VER reply
             Zero = 0,
             UDPPort = 0,                                           // Use TCP for NLP/MCI
-            Flags = (ushort)(InSimFlags.ISF_NLP | InSimFlags.ISF_MCI), // Receive NLP and MCI packets
+            Flags = (ushort)InSimFlags.ISF_MCI,                  // MCI already includes node, lap, position and speed
             InSimVer = 10,                                         // INSIM_VERSION 10
             Prefix = 0,                                            // No special prefix
             Interval = 200,                                        // 200ms interval for NLP/MCI
@@ -511,22 +511,30 @@ public struct IS_RES
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct CompCar
 {
-    public byte PLID;                    // Player ID or 0 if empty slot
-    public byte Speed;                   // Speed in MPH * 50 (0-5828)
+    public ushort Node;                  // Current path node
+    public ushort Lap;                   // Current lap
+    public byte PLID;                    // Player ID
+    public byte Position;                // Race position: 1 = leader
+    public byte Info;                    // CCI_* flags
+    public byte Sp3;                     // Spare
+    public int X;                        // X map (65536 = 1 metre)
+    public int Y;                        // Y map (65536 = 1 metre)
+    public int Z;                        // Z altitude (65536 = 1 metre)
+    public ushort Speed;                 // Speed (32768 = 100 m/s)
+    public ushort Direction;             // Direction of motion
+    public ushort Heading;               // Car heading
+    public short AngVel;                 // Rate of change of heading
 }
 
 /// <summary>
-/// Multi Car Info packet - contains brief info on multiple cars every 200ms (if ISF_MCI enabled)
-/// Physical size: 4 + (N * 2) bytes, typically: 4 + 40*2 = 84 bytes (Size = 21)
+/// Multi Car Info packet header for a variable-sized packet.
+/// Physical size: 4 + (NumC * 28) bytes, Size field = packet_size / 4.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct IS_MCI
 {
-    public byte Size;                    // Packet size / 4 (usually 21 for 40 cars)
+    public byte Size;                    // Packet size / 4
     public byte Type;                    // ISP_MCI
     public byte ReqI;                    // 0
-    public byte NumCars;                 // Number of car structures in this packet (up to 40)
-
-    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 40)]
-    public CompCar[] Cars;               // Car info Array (up to 40 cars)
+    public byte NumCars;                 // Number of valid CompCar structs in this packet
 }

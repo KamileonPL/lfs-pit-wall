@@ -47,6 +47,7 @@ public static class SessionDataBuilder
                     personalBestLapMs = personalBestLap?.LapTimeMs ?? 0,
                     lastLapNumber = currentLap?.LapNumber ?? 0,
                     lastLapTimeMs = currentLap?.LapTimeMs ?? 0,
+                    topSpeedKmh = Math.Round(d.TopSpeedKmh, 1),
                     gapToPreviousMs,
                     personalBestSectors = d.PersonalBestSectors,
                     tyreTypes = d.TyreTypes.Select(t => (int)t).ToArray(),

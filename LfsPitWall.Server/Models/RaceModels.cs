@@ -186,6 +186,11 @@ public class Driver
     public ushort CurrentTrackLap { get; set; }
 
     /// <summary>
+    /// Driver's highest speed reached in the current session, in km/h.
+    /// </summary>
+    public double TopSpeedKmh { get; private set; }
+
+    /// <summary>
     /// Lap history (lap-centric architecture - all laps stored here)
     /// </summary>
     public List<LapData> LapHistory { get; set; } = new();
@@ -293,6 +298,23 @@ public class Driver
 
         return TimingPointElapsedTimes.TryGetValue(lapNumber, out var lapTimingPoints)
             && lapTimingPoints.TryGetValue(timingPointIndex, out elapsedTimeMs);
+    }
+
+    /// <summary>
+    /// Updates the driver's session top speed from raw MCI speed units.
+    /// </summary>
+    public void UpdateTopSpeed(ushort rawSpeed)
+    {
+        if (rawSpeed == 0)
+        {
+            return;
+        }
+
+        var speedKmh = rawSpeed * 360.0 / 32768.0;
+        if (speedKmh > TopSpeedKmh)
+        {
+            TopSpeedKmh = speedKmh;
+        }
     }
 
     /// <summary>

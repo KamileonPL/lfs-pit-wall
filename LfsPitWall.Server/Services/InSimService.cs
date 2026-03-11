@@ -53,8 +53,7 @@ public class InSimService : BackgroundService
         // Timing data
         _dispatcher.Bind<IS_LAP>(InSimPacketType.ISP_LAP, HandleLapTime);
         _dispatcher.Bind<IS_SPX>(InSimPacketType.ISP_SPX, HandleSectorTime);
-        _dispatcher.Bind<IS_MCI>(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
-        _dispatcher.BindRaw(InSimPacketType.ISP_NLP, HandleNodeAndLap);
+        _dispatcher.BindRaw(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
 
         // Known packet types we don't need — suppress log noise
         _dispatcher.Suppress(
@@ -89,32 +88,6 @@ public class InSimService : BackgroundService
         _raceSession.AddOrUpdateDriver(driver);
         _logger.LogDebug("Auto-created placeholder driver for {Reason}: {PLID}", reason, playerId);
         return driver;
-    }
-
-    private void HandleNodeAndLap(byte[] packet)
-    {
-        if (packet.Length < 4)
-            return;
-
-        var numPlayers = packet[3];
-        var offset = 4;
-
-        for (var i = 0; i < numPlayers && offset + 5 < packet.Length; i++)
-        {
-            var node = BitConverter.ToUInt16(packet, offset);
-            var lap = BitConverter.ToUInt16(packet, offset + 2);
-            var playerId = packet[offset + 4];
-            var position = packet[offset + 5];
-            offset += 6;
-
-            if (playerId == 0)
-                continue;
-
-            var driver = GetOrCreatePlaceholderDriver(playerId, "NLP");
-            driver.CurrentTrackNode = node;
-            driver.CurrentTrackLap = lap;
-            driver.CurrentRacePosition = position;
-        }
     }
 
     // ── Service Lifecycle ─────────────────────────────────
@@ -296,11 +269,42 @@ public class InSimService : BackgroundService
     }
 
     // ── Packet Handlers ─────────────────────────────────
-    private void HandleMultiCarInfo(IS_MCI packet)
+    private void HandleMultiCarInfo(byte[] packet)
     {
-        // IS_MCI is currently used only as movement telemetry.
-        // Driver entries are created from authoritative player/timing packets (NPL, LAP, SPX),
-        // which avoids filling the table with placeholder rows from incomplete MCI parsing.
+        const int headerSize = 4;
+        const int compCarSize = 28;
+
+        if (packet.Length < headerSize)
+        {
+            return;
+        }
+
+        var numCars = packet[3];
+        var availableCars = Math.Min(numCars, (packet.Length - headerSize) / compCarSize);
+
+        for (var index = 0; index < availableCars; index++)
+        {
+            var offset = headerSize + (index * compCarSize);
+            var carBytes = new byte[compCarSize];
+            Array.Copy(packet, offset, carBytes, 0, compCarSize);
+
+            var car = InSimConnection.BytesToStruct<CompCar>(carBytes);
+            if (car.PLID == 0)
+            {
+                continue;
+            }
+
+            var driver = _raceSession.GetDriver(car.PLID);
+            if (driver == null)
+            {
+                continue;
+            }
+
+            driver.CurrentTrackNode = car.Node;
+            driver.CurrentTrackLap = car.Lap;
+            driver.CurrentRacePosition = car.Position;
+            driver.UpdateTopSpeed(car.Speed);
+        }
     }
 
     /// <summary>

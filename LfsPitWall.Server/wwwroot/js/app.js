@@ -231,6 +231,15 @@ function renderTyreSummary(tyreTypes) {
         </div>`;
 }
 
+function formatSpeedKmh(speedKmh) {
+    const numericSpeed = Number(speedKmh || 0);
+    if (!numericSpeed) {
+        return "-";
+    }
+
+    return `${numericSpeed.toFixed(1)} km/h`;
+}
+
 function getSectorNumbers(data) {
     const activeSectorCount = Number(data.activeSectorCount || 0);
     return Array.from({ length: activeSectorCount }, (_, index) => index + 1);
@@ -362,6 +371,7 @@ function updateDriversTable(data) {
                         <span>${gap}</span>
                     </span>
                 </td>
+                <td class="px-4 py-3 text-sm font-mono text-gray-300">${formatSpeedKmh(driver.topSpeedKmh)}</td>
                 <td class="px-4 py-3">
                     ${renderTyreSummary(driver.tyreTypes)}
                 </td>
