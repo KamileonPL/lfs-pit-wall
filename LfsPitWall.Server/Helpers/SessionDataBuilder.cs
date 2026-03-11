@@ -22,7 +22,7 @@ public static class SessionDataBuilder
             sessionTimeMs = session.SessionTimeMs,
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
-            players = session.GetDriversSortedByBestLap().Select(d =>
+            players = session.GetDriversForStandings().Select(d =>
             {
                 var personalBestLap = d.PersonalBestLap;
                 var currentLap = d.LapHistory.Count > 0 ? d.LapHistory[^1] : null;

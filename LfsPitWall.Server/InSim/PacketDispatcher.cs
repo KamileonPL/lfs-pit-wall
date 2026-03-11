@@ -29,6 +29,14 @@ public class PacketDispatcher
     }
 
     /// <summary>
+    /// Registers a raw byte handler for variable-sized packets.
+    /// </summary>
+    public void BindRaw(InSimPacketType packetType, Action<byte[]> handler)
+    {
+        _handlers[packetType] = handler;
+    }
+
+    /// <summary>
     /// Marks packet types as known-but-ignored to suppress "unhandled" log noise.
     /// </summary>
     public void Suppress(params InSimPacketType[] types)

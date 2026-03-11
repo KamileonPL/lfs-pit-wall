@@ -54,6 +54,7 @@ public class InSimService : BackgroundService
         _dispatcher.Bind<IS_LAP>(InSimPacketType.ISP_LAP, HandleLapTime);
         _dispatcher.Bind<IS_SPX>(InSimPacketType.ISP_SPX, HandleSectorTime);
         _dispatcher.Bind<IS_MCI>(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
+        _dispatcher.BindRaw(InSimPacketType.ISP_NLP, HandleNodeAndLap);
 
         // Known packet types we don't need — suppress log noise
         _dispatcher.Suppress(
@@ -61,10 +62,59 @@ public class InSimService : BackgroundService
             InSimPacketType.ISP_PIT,
             InSimPacketType.ISP_PSF,
             InSimPacketType.ISP_PEN,
-            InSimPacketType.ISP_NLP,
             InSimPacketType.ISP_CCH,
             InSimPacketType.ISP_UCO
         );
+    }
+
+    private Driver GetOrCreatePlaceholderDriver(byte playerId, string reason)
+    {
+        var driver = _raceSession.GetDriver(playerId);
+        if (driver != null)
+            return driver;
+
+        var driverName = $"Driver #{playerId}";
+        driver = new Driver
+        {
+            PlayerId = playerId,
+            Name = driverName,
+            NameHtml = LfsColorConverter.ConvertToHtml(driverName),
+            CarName = "???",
+            SkinName = "",
+            Username = "",
+            FuelPercent = 0,
+            TyreTypes = new[] { (byte)0, (byte)0, (byte)0, (byte)0 }
+        };
+
+        _raceSession.AddOrUpdateDriver(driver);
+        _logger.LogDebug("Auto-created placeholder driver for {Reason}: {PLID}", reason, playerId);
+        return driver;
+    }
+
+    private void HandleNodeAndLap(byte[] packet)
+    {
+        if (packet.Length < 4)
+            return;
+
+        var numPlayers = packet[3];
+        var offset = 4;
+
+        for (var i = 0; i < numPlayers && offset + 5 < packet.Length; i++)
+        {
+            var node = BitConverter.ToUInt16(packet, offset);
+            var lap = BitConverter.ToUInt16(packet, offset + 2);
+            var playerId = packet[offset + 4];
+            var position = packet[offset + 5];
+            offset += 6;
+
+            if (playerId == 0)
+                continue;
+
+            var driver = GetOrCreatePlaceholderDriver(playerId, "NLP");
+            driver.CurrentTrackNode = node;
+            driver.CurrentTrackLap = lap;
+            driver.CurrentRacePosition = position;
+        }
     }
 
     // ── Service Lifecycle ─────────────────────────────────
@@ -366,25 +416,10 @@ public class InSimService : BackgroundService
     private void HandleLapTime(IS_LAP packet)
     {
         var driver = _raceSession.GetDriver(packet.PLID);
-        
-        // Create placeholder driver if not found
+
         if (driver == null)
         {
-            var driverName = $"Driver #{packet.PLID}";
-            driver = new Driver
-            {
-                PlayerId = packet.PLID,
-                Name = driverName,
-                NameHtml = LfsColorConverter.ConvertToHtml(driverName),
-                CarName = "???",
-                SkinName = "",
-                Username = "",
-                FuelPercent = 0,
-                TyreTypes = new[] { (byte)0, (byte)0, (byte)0, (byte)0 }
-            };
-            _raceSession.AddOrUpdateDriver(driver);
-            _logger.LogDebug("Auto-created placeholder driver for ID: {PLID}", packet.PLID);
-            
+            driver = GetOrCreatePlaceholderDriver(packet.PLID, "LAP");
             // Request player info
             _ = RequestInitialDataAsync();
         }
@@ -458,26 +493,7 @@ public class InSimService : BackgroundService
     /// </summary>
     private void HandleSectorTime(IS_SPX packet)
     {
-        var driver = _raceSession.GetDriver(packet.PLID);
-        
-        // Create placeholder if not found
-        if (driver == null)
-        {
-            var driverName = $"Driver #{packet.PLID}";
-            driver = new Driver
-            {
-                PlayerId = packet.PLID,
-                Name = driverName,
-                NameHtml = LfsColorConverter.ConvertToHtml(driverName),
-                CarName = "???",
-                SkinName = "",
-                Username = "",
-                FuelPercent = null,
-                TyreTypes = new[] { (byte)0, (byte)0, (byte)0, (byte)0 }
-            };
-            _raceSession.AddOrUpdateDriver(driver);
-            _logger.LogDebug("Auto-created placeholder driver for SPX: {PLID}", packet.PLID);
-        }
+        var driver = _raceSession.GetDriver(packet.PLID) ?? GetOrCreatePlaceholderDriver(packet.PLID, "SPX");
 
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
         byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);

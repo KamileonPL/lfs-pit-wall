@@ -156,6 +156,21 @@ public class Driver
     public uint LastLapNumber { get; set; }
 
     /// <summary>
+    /// Current race position from NLP/MCI packets. 0 means unknown.
+    /// </summary>
+    public byte CurrentRacePosition { get; set; }
+
+    /// <summary>
+    /// Current track node from NLP/MCI packets.
+    /// </summary>
+    public ushort CurrentTrackNode { get; set; }
+
+    /// <summary>
+    /// Current lap from NLP/MCI packets.
+    /// </summary>
+    public ushort CurrentTrackLap { get; set; }
+
+    /// <summary>
     /// Lap history (lap-centric architecture - all laps stored here)
     /// </summary>
     public List<LapData> LapHistory { get; set; } = new();
@@ -339,6 +354,34 @@ public class RaceSession
                 .ThenByDescending(p => p.LapsCompleted)
                 .ThenBy(p => p.Name)
                 .ToList(); // CRITICAL: ToList() creates snapshot before lock is released
+        }
+    }
+
+    /// <summary>
+    /// Gets drivers ordered for live standings depending on session type.
+    /// Race sessions sort by on-track position, other sessions by best lap.
+    /// </summary>
+    public IEnumerable<Driver> GetDriversForStandings()
+    {
+        lock (_playersLock)
+        {
+            if (SessionType == 2)
+            {
+                return Players.Values
+                    .OrderBy(p => p.CurrentRacePosition > 0 ? 0 : 1)
+                    .ThenBy(p => p.CurrentRacePosition == 0 ? byte.MaxValue : p.CurrentRacePosition)
+                    .ThenByDescending(p => p.CurrentTrackLap)
+                    .ThenByDescending(p => p.CurrentTrackNode)
+                    .ThenBy(p => p.Name)
+                    .ToList();
+            }
+
+            return Players.Values
+                .OrderBy(p => p.PersonalBestLap == null ? 1 : 0)
+                .ThenBy(p => p.PersonalBestLap?.GetAdjustedTime() ?? uint.MaxValue)
+                .ThenByDescending(p => p.LapsCompleted)
+                .ThenBy(p => p.Name)
+                .ToList();
         }
     }
 
