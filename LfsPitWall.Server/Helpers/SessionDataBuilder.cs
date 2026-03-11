@@ -11,6 +11,7 @@ public static class SessionDataBuilder
     public static object Build(RaceSession session)
     {
         var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
+        var sessionBestLap = session.SessionBestLap;
         
         return new
         {
@@ -21,29 +22,35 @@ public static class SessionDataBuilder
             sessionTimeMs = session.SessionTimeMs,
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
-            players = session.GetDriversSortedByBestLap().Select(d => new
+            players = session.GetDriversSortedByBestLap().Select(d =>
             {
-                playerId = d.PlayerId,
-                name = d.Name,
-                nameHtml = string.IsNullOrEmpty(d.Username)
-                    ? d.NameHtml
-                    : $"{d.NameHtml} <span style=\"color:#AAAAAA\">({System.Net.WebUtility.HtmlEncode(d.Username)})</span>",
-                carName = d.CarName,
-                driverColor = d.DriverColor,
-                lapsCompleted = d.LapsCompleted,
-                personalBestLapMs = d.PersonalBestLap?.LapTimeMs ?? 0,
-                lastElapsedTimeMs = d.LastElapsedTimeMs,
-                currentLapNumber = d.LapHistory.Count > 0 ? d.LapHistory.Last().LapNumber : 0,
-                currentLapTimeMs = d.LapHistory.Count > 0 ? d.LapHistory.Last().LapTimeMs : 0,
-                personalBestSectors = d.PersonalBestSectors,
-                fuelPercent = d.FuelPercent,
-                pitStops = d.PitStops,
-                currentSectorProgress = d.GetCurrentSectorProgress().ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => kvp.Value.TimeMs
-                )
+                var personalBestLap = d.PersonalBestLap;
+                var currentLap = d.LapHistory.Count > 0 ? d.LapHistory[^1] : null;
+
+                return new
+                {
+                    playerId = d.PlayerId,
+                    name = d.Name,
+                    nameHtml = string.IsNullOrEmpty(d.Username)
+                        ? d.NameHtml
+                        : $"{d.NameHtml} <span style=\"color:#AAAAAA\">({System.Net.WebUtility.HtmlEncode(d.Username)})</span>",
+                    carName = d.CarName,
+                    driverColor = d.DriverColor,
+                    lapsCompleted = d.LapsCompleted,
+                    personalBestLapMs = personalBestLap?.LapTimeMs ?? 0,
+                    lastElapsedTimeMs = d.LastElapsedTimeMs,
+                    currentLapNumber = currentLap?.LapNumber ?? 0,
+                    currentLapTimeMs = currentLap?.LapTimeMs ?? 0,
+                    personalBestSectors = d.PersonalBestSectors,
+                    fuelPercent = d.FuelPercent,
+                    pitStops = d.PitStops,
+                    currentSectorProgress = d.GetCurrentSectorProgress().ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => kvp.Value.TimeMs
+                    )
+                };
             }).ToList(),
-            sessionBestLapMs = session.SessionBestLap?.LapTimeMs ?? 0,
+            sessionBestLapMs = sessionBestLap?.LapTimeMs ?? 0,
             sessionBestLapAuthorName = authorNameHtml,
             sessionBestLapAuthorUsername = authorUsername,
             sessionBestLapNumber = bestLapNumber,

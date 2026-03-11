@@ -313,6 +313,7 @@ public class InSimService : BackgroundService
             driver.Username = username;
             driver.TyreTypes = new[] { packet.Tyres0, packet.Tyres1, packet.Tyres2, packet.Tyres3 };
             driver.FuelPercent = packet.Fuel == 255 ? null : packet.Fuel;
+            _raceSession.RefreshSessionBestLapAuthor(driver);
             
             if (wasUnknown)
             {
@@ -336,6 +337,7 @@ public class InSimService : BackgroundService
                 FuelPercent = packet.Fuel == 255 ? null : packet.Fuel
             };
             _raceSession.AddOrUpdateDriver(driver);
+            _raceSession.RefreshSessionBestLapAuthor(driver);
             _logger.LogInformation(
                 "🏎️ New Player: {PlayerName} ({UserName}) (ID: {PLID}) in {CarName}",
                 LfsColorConverter.RemoveColorCodes(formattedName), username, packet.PLID, carName);
@@ -411,8 +413,6 @@ public class InSimService : BackgroundService
             RecordedAt = DateTime.UtcNow
         };
 
-        var previousSessionBestLapTime = _raceSession.SessionBestLap?.LapTimeMs;
-
         driver.AddLap(lapData);
         driver.LapsCompleted = packet.LapsDone;
         
@@ -435,24 +435,18 @@ public class InSimService : BackgroundService
             driver.FuelPercent.HasValue ? $"{driver.FuelPercent}%" : "N/A",
             packet.NumStops);
 
-        // Log personal/session bests
-        if (driver.PersonalBestLap?.LapNumber == packet.LapsDone)
+        var isPersonalBest = ReferenceEquals(driver.PersonalBestLap, lapData);
+        var isSessionBest = _raceSession.TryUpdateSessionBestLap(driver, lapData);
+
+        if (isPersonalBest)
         {
             _logger.LogInformation(
                 "🏁 PERSONAL BEST: {PlayerName} - {LapTime}ms",
                 LfsColorConverter.RemoveColorCodes(driver.Name), packet.LTime);
         }
 
-        // Cache best-lap metadata only when the current lap beats the previous session best.
-        if (previousSessionBestLapTime == null || packet.LTime < previousSessionBestLapTime.Value)
+        if (isSessionBest)
         {
-            _raceSession.SessionBestLapAuthorPLID = packet.PLID;
-            _raceSession.SessionBestLapNumber = packet.LapsDone;
-            
-            // Cache author info in case driver leaves before session ends
-            _raceSession.SessionBestLapAuthorNameHtml = driver.NameHtml;
-            _raceSession.SessionBestLapAuthorUsername = driver.Username;
-            
             _logger.LogInformation(
                 "🌟 SESSION BEST: {PlayerName} - {LapTime}ms [Lap {LapNum}]",
                 LfsColorConverter.RemoveColorCodes(driver.Name), packet.LTime, packet.LapsDone);

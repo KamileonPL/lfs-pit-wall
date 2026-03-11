@@ -163,6 +163,14 @@ function getLapTimeClass(driverLapTime, sessionBestTime, driverPersonalBestTime)
     return "current-time";
 }
 
+function formatBestLapDelta(driverBestLapMs, sessionBestLapMs) {
+    if (!driverBestLapMs || !sessionBestLapMs || driverBestLapMs <= sessionBestLapMs) {
+        return "";
+    }
+
+    return `+${((driverBestLapMs - sessionBestLapMs) / 1000).toFixed(3)}s`;
+}
+
 // ── Session Info Update ───────────────────────────────────
 
 function updateSessionInfo(data) {
@@ -214,6 +222,7 @@ function updateDriversTable(data) {
             data.sessionBestLapMs,
             driver.personalBestLapMs
         );
+        const bestLapDelta = formatBestLapDelta(driver.personalBestLapMs, data.sessionBestLapMs);
 
         const sectorTimeClass = (sectorNum) => {
             const time = driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] : 0;
@@ -238,7 +247,10 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-4 py-3">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
-                    <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
+                    <div class="best-lap-cell">
+                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
+                        ${bestLapDelta ? `<span class="best-lap-delta">${bestLapDelta}</span>` : ""}
+                    </div>
                 </td>
                 <td class="px-4 py-3 font-mono text-sm">${formatTime(driver.currentLapTimeMs)}</td>
                 <td class="px-4 py-3 text-xs">

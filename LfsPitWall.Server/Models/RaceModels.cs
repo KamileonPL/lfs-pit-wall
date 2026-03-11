@@ -163,10 +163,7 @@ public class Driver
     /// <summary>
     /// Driver's personal best lap
     /// </summary>
-    public LapData? PersonalBestLap => LapHistory
-        .Where(l => l.IsValid)
-        .OrderBy(l => l.GetAdjustedTime())
-        .FirstOrDefault();
+    public LapData? PersonalBestLap { get; private set; }
 
     /// <summary>
     /// Driver's personal best time for each sector
@@ -217,6 +214,14 @@ public class Driver
     public void AddLap(LapData lap)
     {
         LapHistory.Add(lap);
+
+        if (!lap.IsValid)
+            return;
+
+        if (PersonalBestLap == null || lap.GetAdjustedTime() < PersonalBestLap.GetAdjustedTime())
+        {
+            PersonalBestLap = lap;
+        }
     }
 }
 
@@ -270,7 +275,12 @@ public class RaceSession
     public byte QualifyingMins { get; set; }
 
     /// <summary>
-    /// Session Best Lap - Author PLID and lap number
+    /// Session best lap cached for fast reads.
+    /// </summary>
+    public LapData? SessionBestLap { get; private set; }
+
+    /// <summary>
+    /// Session Best Lap - author and lap metadata.
     /// </summary>
     public byte? SessionBestLapAuthorPLID { get; set; }
     public ushort? SessionBestLapNumber { get; set; }
@@ -285,25 +295,6 @@ public class RaceSession
     /// Connected drivers, keyed by Player ID
     /// </summary>
     public Dictionary<byte, Driver> Players { get; set; } = new();
-
-    /// <summary>
-    /// Session's global best lap
-    /// </summary>
-    public LapData? SessionBestLap
-    {
-        get
-        {
-            lock (_playersLock)
-            {
-                var allLaps = Players.Values
-                    .SelectMany(p => p.LapHistory)
-                    .Where(l => l.IsValid)
-                    .OrderBy(l => l.GetAdjustedTime())
-                    .FirstOrDefault();
-                return allLaps;
-            }
-        }
-    }
 
     /// <summary>
     /// Session's global best times for each sector
@@ -372,21 +363,9 @@ public class RaceSession
     {
         lock (_playersLock)
         {
-            var bestLap = Players.Values
-                .SelectMany(player => player.LapHistory)
-                .Where(lap => lap.IsValid)
-                .OrderBy(lap => lap.GetAdjustedTime())
-                .FirstOrDefault();
-
-            if (bestLap != null)
+            if (SessionBestLap != null)
             {
-                var owner = Players.Values.FirstOrDefault(player =>
-                    player.LapHistory.Any(lap => ReferenceEquals(lap, bestLap)));
-
-                if (owner != null)
-                {
-                    return (owner.NameHtml, owner.Username, bestLap.LapNumber);
-                }
+                return (SessionBestLapAuthorNameHtml, SessionBestLapAuthorUsername, SessionBestLapNumber);
             }
 
             if (!string.IsNullOrEmpty(SessionBestLapAuthorNameHtml))
@@ -395,6 +374,43 @@ public class RaceSession
             }
 
             return (null, null, null);
+        }
+    }
+
+    /// <summary>
+    /// Updates cached session best lap metadata.
+    /// </summary>
+    public bool TryUpdateSessionBestLap(Driver driver, LapData lap)
+    {
+        if (!lap.IsValid)
+            return false;
+
+        lock (_playersLock)
+        {
+            if (SessionBestLap != null && lap.GetAdjustedTime() >= SessionBestLap.GetAdjustedTime())
+                return false;
+
+            SessionBestLap = lap;
+            SessionBestLapAuthorPLID = driver.PlayerId;
+            SessionBestLapNumber = (ushort)lap.LapNumber;
+            SessionBestLapAuthorNameHtml = driver.NameHtml;
+            SessionBestLapAuthorUsername = driver.Username;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Refreshes cached session best author identity when richer player data arrives later.
+    /// </summary>
+    public void RefreshSessionBestLapAuthor(Driver driver)
+    {
+        lock (_playersLock)
+        {
+            if (SessionBestLapAuthorPLID != driver.PlayerId)
+                return;
+
+            SessionBestLapAuthorNameHtml = driver.NameHtml;
+            SessionBestLapAuthorUsername = driver.Username;
         }
     }
 
@@ -455,6 +471,7 @@ public class RaceSession
             RaceFlag = 0;
             RaceInProgress = false;
             SessionTimeMs = 0;
+            SessionBestLap = null;
             SessionBestLapAuthorPLID = null;
             SessionBestLapNumber = null;
             SessionBestLapAuthorNameHtml = string.Empty;
