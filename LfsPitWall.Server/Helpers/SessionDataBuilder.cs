@@ -13,6 +13,7 @@ public static class SessionDataBuilder
         var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
         var sessionBestLap = session.SessionBestLap;
         var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
+        var orderedDrivers = session.GetDriversForStandings().ToList();
         
         return new
         {
@@ -24,10 +25,13 @@ public static class SessionDataBuilder
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
             activeSectorCount = session.ActiveSectorCount,
-            players = session.GetDriversForStandings().Select(d =>
+            players = orderedDrivers.Select((d, index) =>
             {
                 var personalBestLap = d.PersonalBestLap;
                 var currentLap = d.LapHistory.Count > 0 ? d.LapHistory[^1] : null;
+                uint? gapToPreviousMs = session.SessionType == 2 && index > 0
+                    ? GetGapToPreviousMs(d, orderedDrivers[index - 1])
+                    : null;
 
                 return new
                 {
@@ -40,9 +44,9 @@ public static class SessionDataBuilder
                     driverColor = d.DriverColor,
                     lapsCompleted = d.LapsCompleted,
                     personalBestLapMs = personalBestLap?.LapTimeMs ?? 0,
-                    lastElapsedTimeMs = d.LastElapsedTimeMs,
                     lastLapNumber = currentLap?.LapNumber ?? 0,
                     lastLapTimeMs = currentLap?.LapTimeMs ?? 0,
+                    gapToPreviousMs,
                     personalBestSectors = d.PersonalBestSectors,
                     fuelPercent = d.FuelPercent,
                     pitStops = d.PitStops,
@@ -68,5 +72,23 @@ public static class SessionDataBuilder
             packetType = "SESSION_UPDATE",
             updatedAt = DateTime.UtcNow.ToString("O")
         };
+    }
+
+    private static uint? GetGapToPreviousMs(Driver driver, Driver previousDriver)
+    {
+        var timingPoint = driver.LastTimingPoint;
+        if (timingPoint == null)
+        {
+            return null;
+        }
+
+        if (!previousDriver.TryGetTimingPointElapsedTime(timingPoint.LapNumber, timingPoint.TimingPointIndex, out var previousElapsedTimeMs))
+        {
+            return null;
+        }
+
+        return timingPoint.ElapsedTimeMs >= previousElapsedTimeMs
+            ? timingPoint.ElapsedTimeMs - previousElapsedTimeMs
+            : null;
     }
 }

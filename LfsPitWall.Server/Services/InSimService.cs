@@ -450,10 +450,7 @@ public class InSimService : BackgroundService
 
         driver.AddLap(lapData, _raceSession.ActiveSectorCount);
         driver.LapsCompleted = packet.LapsDone;
-        
-        // Update last elapsed time for gap calculation (when driver crossed finish line)
-        driver.LastElapsedTimeMs = packet.ETime;
-        driver.LastLapNumber = packet.LapsDone;
+        driver.RecordTimingPoint(packet.LapsDone, _raceSession.ActiveSectorCount, packet.ETime);
         
         // Helper: format ms to M:SS.mmm
         string FormatMs(uint ms) =>
@@ -501,6 +498,7 @@ public class InSimService : BackgroundService
 
         // Update sector time from cumulative split time
         driver.UpdateSectorTime(packet.Split, packet.STime);
+        driver.RecordTimingPoint(driver.LapsCompleted + 1, packet.Split, packet.ETime);
         var sectorTimeMs = driver.CurrentLapSectors.TryGetValue(packet.Split, out var sector)
             ? sector.TimeMs
             : packet.STime;

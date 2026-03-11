@@ -241,9 +241,10 @@ function updateDriversTable(data) {
         const position = index + 1;
         const sectorNumbers = getSectorNumbers(data);
 
-        const gap = position === 1 ? "-" :
-            (data.players[index - 1]?.lastElapsedTimeMs && driver.lastElapsedTimeMs
-                ? formatTime(driver.lastElapsedTimeMs - data.players[index - 1].lastElapsedTimeMs, true)
+        const gap = position === 1
+            ? "-"
+            : (driver.gapToPreviousMs !== null && driver.gapToPreviousMs !== undefined
+                ? formatTime(driver.gapToPreviousMs, true)
                 : "-");
 
         const lapTimeClass = getLapTimeClass(

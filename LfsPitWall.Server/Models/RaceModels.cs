@@ -32,6 +32,16 @@ public class SessionBestSectorInfo
 }
 
 /// <summary>
+/// Represents a driver's most recent elapsed-time checkpoint in the session.
+/// </summary>
+public class TimingPointSnapshot
+{
+    public uint LapNumber { get; set; }
+    public int TimingPointIndex { get; set; }
+    public uint ElapsedTimeMs { get; set; }
+}
+
+/// <summary>
 /// Represents a single lap's complete timing data (lap-centric architecture)
 /// </summary>
 public class LapData
@@ -156,14 +166,9 @@ public class Driver
     public uint LapsCompleted { get; set; }
 
     /// <summary>
-    /// Last elapsed time when driver finished a lap (for gap calculation)
+    /// Last elapsed-time checkpoint recorded for this driver.
     /// </summary>
-    public uint LastElapsedTimeMs { get; set; }
-
-    /// <summary>
-    /// Last lap number completed (for gap calculation context)
-    /// </summary>
-    public uint LastLapNumber { get; set; }
+    public TimingPointSnapshot? LastTimingPoint { get; private set; }
 
     /// <summary>
     /// Current race position from NLP/MCI packets. 0 means unknown.
@@ -204,6 +209,11 @@ public class Driver
     /// Cumulative split times recorded for the current in-progress lap.
     /// </summary>
     public Dictionary<int, uint> CurrentLapSplitTimes { get; } = new();
+
+    /// <summary>
+    /// Recent elapsed times keyed by lap number and timing-point index.
+    /// </summary>
+    public Dictionary<uint, Dictionary<int, uint>> TimingPointElapsedTimes { get; } = new();
 
     /// <summary>
     /// Gets the current lap's sector times that have been recorded so far
@@ -248,6 +258,41 @@ public class Driver
         };
 
         CurrentLapSectors[sectorNumber] = sectorTime;
+    }
+
+    /// <summary>
+    /// Stores an elapsed time at a specific timing point for later gap comparisons.
+    /// </summary>
+    public void RecordTimingPoint(uint lapNumber, int timingPointIndex, uint elapsedTimeMs)
+    {
+        if (lapNumber == 0 || timingPointIndex <= 0 || elapsedTimeMs == 0)
+        {
+            return;
+        }
+
+        if (!TimingPointElapsedTimes.TryGetValue(lapNumber, out var lapTimingPoints))
+        {
+            lapTimingPoints = new Dictionary<int, uint>();
+            TimingPointElapsedTimes[lapNumber] = lapTimingPoints;
+        }
+
+        lapTimingPoints[timingPointIndex] = elapsedTimeMs;
+        LastTimingPoint = new TimingPointSnapshot
+        {
+            LapNumber = lapNumber,
+            TimingPointIndex = timingPointIndex,
+            ElapsedTimeMs = elapsedTimeMs
+        };
+
+        PruneTimingPointHistory(lapNumber);
+    }
+
+    public bool TryGetTimingPointElapsedTime(uint lapNumber, int timingPointIndex, out uint elapsedTimeMs)
+    {
+        elapsedTimeMs = 0;
+
+        return TimingPointElapsedTimes.TryGetValue(lapNumber, out var lapTimingPoints)
+            && lapTimingPoints.TryGetValue(timingPointIndex, out elapsedTimeMs);
     }
 
     /// <summary>
@@ -329,6 +374,19 @@ public class Driver
     {
         CurrentLapSectors.Clear();
         CurrentLapSplitTimes.Clear();
+    }
+
+    private void PruneTimingPointHistory(uint currentLapNumber)
+    {
+        var minimumLapToKeep = currentLapNumber > 2 ? currentLapNumber - 2 : 1;
+        var lapsToRemove = TimingPointElapsedTimes.Keys
+            .Where(lapNumber => lapNumber < minimumLapToKeep)
+            .ToList();
+
+        foreach (var lapNumber in lapsToRemove)
+        {
+            TimingPointElapsedTimes.Remove(lapNumber);
+        }
     }
 }
 
