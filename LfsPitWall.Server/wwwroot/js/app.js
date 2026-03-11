@@ -243,6 +243,7 @@ function updateSessionInfo(data) {
     document.getElementById("session-type").textContent = data.sessionType || "-";
     document.getElementById("weather-type").textContent = data.weatherType || "-";
     document.getElementById("race-status").textContent = data.raceInProgress ? "🏁 LIVE" : "Idle";
+    document.getElementById("driver-count").textContent = Array.isArray(data.players) ? data.players.length : 0;
 
     const maxLaps = Math.max(0, ...data.players.map(p => p.lapsCompleted || 0));
     const displayMaxLaps = data.maxRaceLaps || maxLaps;
