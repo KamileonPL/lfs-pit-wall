@@ -153,6 +153,7 @@ function getTimeClass(currentTime, bestSessionTime, bestPersonalTime) {
     if (!currentTime || currentTime === 0) return "current-time";
     if (bestSessionTime && currentTime === bestSessionTime) return "session-best";
     if (bestPersonalTime && currentTime === bestPersonalTime && currentTime !== bestSessionTime) return "personal-best";
+    if (bestPersonalTime && currentTime > bestPersonalTime) return "slower-than-personal";
     return "current-time";
 }
 
