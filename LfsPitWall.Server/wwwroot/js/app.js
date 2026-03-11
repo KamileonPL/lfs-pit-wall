@@ -157,6 +157,18 @@ function getTimeClass(currentTime, bestSessionTime, bestPersonalTime) {
     return "current-time";
 }
 
+function getSectorTimeClass(currentSectorTime, displayedSectorTime, bestSessionTime, bestPersonalTime) {
+    if (currentSectorTime > 0) {
+        if (bestSessionTime && currentSectorTime <= bestSessionTime) return "session-best";
+        if (bestPersonalTime && currentSectorTime < bestPersonalTime) return "personal-best";
+        if (bestPersonalTime && currentSectorTime > bestPersonalTime) return "slower-than-personal";
+        if (bestPersonalTime && currentSectorTime === bestPersonalTime) return "personal-best";
+        return "current-time";
+    }
+
+    return getTimeClass(displayedSectorTime, bestSessionTime, bestPersonalTime);
+}
+
 function getLapTimeClass(driverLapTime, sessionBestTime, driverPersonalBestTime) {
     if (!driverLapTime) return "current-time";
     if (sessionBestTime && driverLapTime === sessionBestTime) return "session-best";
@@ -259,10 +271,11 @@ function updateDriversTable(data) {
         };
 
         const sectorTimeClass = (sectorNum) => {
+            const currentSectorTime = getCurrentSectorTime(sectorNum);
             const displayedTime = getDisplayedSectorTime(sectorNum);
             const bestSession = data.sessionBestSectors ? data.sessionBestSectors[sectorNum] : 0;
             const bestPersonal = driver.personalBestSectors ? driver.personalBestSectors[sectorNum] : 0;
-            return getTimeClass(displayedTime, bestSession, bestPersonal);
+            return getSectorTimeClass(currentSectorTime, displayedTime, bestSession, bestPersonal);
         };
 
         const positionBadgeClass = position <= 3
