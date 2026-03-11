@@ -48,7 +48,7 @@ public static class SessionDataBuilder
                     lastLapTimeMs = currentLap?.LapTimeMs ?? 0,
                     gapToPreviousMs,
                     personalBestSectors = d.PersonalBestSectors,
-                    fuelPercent = d.FuelPercent,
+                    tyreTypes = d.TyreTypes.Select(t => (int)t).ToArray(),
                     pitStops = d.PitStops,
                     currentSectorProgress = d.GetCurrentSectorProgress().ToDictionary(
                         kvp => kvp.Key,

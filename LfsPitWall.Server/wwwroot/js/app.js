@@ -194,6 +194,43 @@ function formatSectorDelta(currentSectorTimeMs, personalBestSectorTimeMs) {
     return `${sign}${(Math.abs(deltaMs) / 1000).toFixed(3)}s`;
 }
 
+function getTyreCodeLabel(tyreCode) {
+    switch (Number(tyreCode)) {
+        case 0: return "R1";
+        case 1: return "R2";
+        case 2: return "R3";
+        case 3: return "R4";
+        case 4: return "RS";
+        case 5: return "RN";
+        case 6: return "HY";
+        case 7: return "KN";
+        default: return "-";
+    }
+}
+
+function renderTyreSummary(tyreTypes) {
+    if (!Array.isArray(tyreTypes) || tyreTypes.length !== 4) {
+        return '<span class="text-xs text-gray-500">-</span>';
+    }
+
+    const rearLabel = getTyreCodeLabel(tyreTypes[0]);
+    const frontLabel = getTyreCodeLabel(tyreTypes[2]);
+
+    if (rearLabel === "-" && frontLabel === "-") {
+        return '<span class="text-xs text-gray-500">-</span>';
+    }
+
+    if (rearLabel === frontLabel) {
+        return `<span class="tyre-chip">${frontLabel}</span>`;
+    }
+
+    return `
+        <div class="tyre-stack">
+            <span class="tyre-chip">F ${frontLabel}</span>
+            <span class="tyre-chip">R ${rearLabel}</span>
+        </div>`;
+}
+
 function getSectorNumbers(data) {
     const activeSectorCount = Number(data.activeSectorCount || 0);
     return Array.from({ length: activeSectorCount }, (_, index) => index + 1);
@@ -324,13 +361,7 @@ function updateDriversTable(data) {
                     </span>
                 </td>
                 <td class="px-4 py-3">
-                    ${driver.fuelPercent !== null && driver.fuelPercent !== undefined ? `
-                    <div class="relative w-12 h-2 bg-gray-700 rounded-full overflow-hidden">
-                        <div class="absolute h-full bg-gradient-to-r from-green-500 to-yellow-500 rounded-full"
-                             style="width: ${driver.fuelPercent}%"></div>
-                    </div>
-                    <span class="text-xs text-gray-400">${driver.fuelPercent}%</span>
-                    ` : '<span class="text-xs text-gray-500 italic">N/A</span>'}
+                    ${renderTyreSummary(driver.tyreTypes)}
                 </td>
                 <td class="px-4 py-3 text-center">${driver.pitStops}</td>
             </tr>`;
