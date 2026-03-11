@@ -163,12 +163,12 @@ function getLapTimeClass(driverLapTime, sessionBestTime, driverPersonalBestTime)
     return "current-time";
 }
 
-function formatBestLapDelta(driverBestLapMs, sessionBestLapMs) {
-    if (!driverBestLapMs || !sessionBestLapMs || driverBestLapMs <= sessionBestLapMs) {
+function formatLapDelta(lapTimeMs, referenceLapMs, suffix = "") {
+    if (!lapTimeMs || !referenceLapMs || lapTimeMs <= referenceLapMs) {
         return "";
     }
 
-    return `+${((driverBestLapMs - sessionBestLapMs) / 1000).toFixed(3)}s`;
+    return `+${((lapTimeMs - referenceLapMs) / 1000).toFixed(3)}s${suffix}`;
 }
 
 // ── Session Info Update ───────────────────────────────────
@@ -222,7 +222,8 @@ function updateDriversTable(data) {
             data.sessionBestLapMs,
             driver.personalBestLapMs
         );
-        const bestLapDelta = formatBestLapDelta(driver.personalBestLapMs, data.sessionBestLapMs);
+        const bestLapDelta = formatLapDelta(driver.personalBestLapMs, data.sessionBestLapMs);
+        const lastLapDelta = formatLapDelta(driver.lastLapTimeMs, driver.personalBestLapMs, ' (PB)');
 
         const sectorTimeClass = (sectorNum) => {
             const time = driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] : 0;
@@ -247,12 +248,17 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-4 py-3">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
-                    <div class="best-lap-cell">
+                    <div class="lap-time-cell">
                         <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
-                        ${bestLapDelta ? `<span class="best-lap-delta">${bestLapDelta}</span>` : ""}
+                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
                     </div>
                 </td>
-                <td class="px-4 py-3 font-mono text-sm">${formatTime(driver.currentLapTimeMs)}</td>
+                <td class="px-4 py-3 font-mono text-sm">
+                    <div class="lap-time-cell">
+                        <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
+                        ${lastLapDelta ? `<span class="lap-time-delta">${lastLapDelta}</span>` : ""}
+                    </div>
+                </td>
                 <td class="px-4 py-3 text-xs">
                     <span class="sector-time ${sectorTimeClass(1)}">S1: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[1]) || 0)}</span><br>
                     <span class="sector-time ${sectorTimeClass(2)}">S2: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[2]) || 0)}</span><br>

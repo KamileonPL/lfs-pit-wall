@@ -104,7 +104,7 @@ body {
     border-radius: 3px;
 }
 
-.best-lap-cell {
+.lap-time-cell {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -112,7 +112,7 @@ body {
     width: 100%;
 }
 
-.best-lap-delta {
+.lap-time-delta {
     color: #6b7280;
     font-size: 0.72rem;
     line-height: 1;
