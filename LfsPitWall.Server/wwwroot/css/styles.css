@@ -75,6 +75,21 @@ body {
     margin: 0 2px;
 }
 
+.sector-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 3px;
+    margin: 2px 0;
+}
+
+.sector-delta {
+    color: #6b7280;
+    font-size: 0.72rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 /* --- Position Badges --- */
 
 .position-badge {

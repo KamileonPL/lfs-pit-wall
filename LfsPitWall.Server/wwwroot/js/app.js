@@ -172,6 +172,16 @@ function formatLapDelta(lapTimeMs, referenceLapMs, suffix = "") {
     return `+${((lapTimeMs - referenceLapMs) / 1000).toFixed(3)}s${suffix}`;
 }
 
+function formatSectorDelta(currentSectorTimeMs, personalBestSectorTimeMs) {
+    if (!currentSectorTimeMs || !personalBestSectorTimeMs || currentSectorTimeMs === personalBestSectorTimeMs) {
+        return "";
+    }
+
+    const deltaMs = currentSectorTimeMs - personalBestSectorTimeMs;
+    const sign = deltaMs > 0 ? "+" : "-";
+    return `${sign}${(Math.abs(deltaMs) / 1000).toFixed(3)}s`;
+}
+
 function getSectorNumbers(data) {
     const activeSectorCount = Number(data.activeSectorCount || 0);
     return Array.from({ length: activeSectorCount }, (_, index) => index + 1);
@@ -238,6 +248,16 @@ function updateDriversTable(data) {
             return currentSectorTime || bestPersonalSectorTime || 0;
         };
 
+        const getCurrentSectorTime = (sectorNum) => {
+            return driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] || 0 : 0;
+        };
+
+        const getSectorDelta = (sectorNum) => {
+            const currentSectorTime = getCurrentSectorTime(sectorNum);
+            const bestPersonalSectorTime = driver.personalBestSectors ? driver.personalBestSectors[sectorNum] : 0;
+            return formatSectorDelta(currentSectorTime, bestPersonalSectorTime);
+        };
+
         const sectorTimeClass = (sectorNum) => {
             const displayedTime = getDisplayedSectorTime(sectorNum);
             const bestSession = data.sessionBestSectors ? data.sessionBestSectors[sectorNum] : 0;
@@ -275,7 +295,11 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3 text-xs">
                     ${sectorNumbers.length === 0
                         ? '<span class="text-gray-500">-</span>'
-                        : sectorNumbers.map(sectorNum => `<span class="sector-time ${sectorTimeClass(sectorNum)}">S${sectorNum}: ${formatTime(getDisplayedSectorTime(sectorNum))}</span>`).join('<br>')}
+                        : sectorNumbers.map(sectorNum => `
+                            <div class="sector-row">
+                                <span class="sector-time ${sectorTimeClass(sectorNum)}">S${sectorNum}: ${formatTime(getDisplayedSectorTime(sectorNum))}</span>
+                                ${getSectorDelta(sectorNum) ? `<span class="sector-delta">${getSectorDelta(sectorNum)}</span>` : ""}
+                            </div>`).join('')}
                 </td>
                 <td class="px-4 py-3 text-sm gap-indicator">${gap}</td>
                 <td class="px-4 py-3">
