@@ -6,6 +6,7 @@ namespace LfsPitWall.Server.Models;
 public static class LfsColorConverter
 {
     private const string DefaultColor = "#6B8E23";
+    private const char EscapedCaretPlaceholder = '\uFFF0';
 
     private static readonly Dictionary<char, string> ColorMap = new()
     {
@@ -106,7 +107,7 @@ public static class LfsColorConverter
                 if (EscapeMap.TryGetValue(next, out var escapedChar))
                 {
                     FlushPending();
-                    result.Append(escapedChar);
+                    result.Append(next == '^' ? EscapedCaretPlaceholder : escapedChar);
                     i++;
                     continue;
                 }
@@ -138,7 +139,8 @@ public static class LfsColorConverter
             return lfsText;
 
         var result = new System.Text.StringBuilder();
-        string? currentColor = null;
+        var hasLfsFormatting = HasLfsFormatting(lfsText);
+        string? currentColor = hasLfsFormatting ? DefaultColor : null;
         int i = 0;
 
         while (i < lfsText.Length)
@@ -156,7 +158,7 @@ public static class LfsColorConverter
                 }
                 if (nextChar == '9')
                 {
-                    currentColor = null;
+                    currentColor = hasLfsFormatting ? DefaultColor : null;
                     i += 2;
                     continue;
                 }
@@ -242,6 +244,13 @@ public static class LfsColorConverter
             }
 
             char c = lfsText[i];
+            if (c == EscapedCaretPlaceholder)
+            {
+                result.Append('^');
+                i++;
+                continue;
+            }
+
             // Skip only control characters (CR, LF, TAB, NULL)
             if (c == '\0' || c == '\r' || c == '\n' || c == '\t')
             {
@@ -267,6 +276,7 @@ public static class LfsColorConverter
         if (string.IsNullOrEmpty(text))
             return;
 
+        text = text.Replace(EscapedCaretPlaceholder.ToString(), "^");
         text = System.Net.WebUtility.HtmlEncode(text);
         if (string.IsNullOrEmpty(color))
         {
@@ -275,5 +285,20 @@ public static class LfsColorConverter
         }
 
         result.Append($"<span style=\"color:{color}\">{text}</span>");
+    }
+
+    private static bool HasLfsFormatting(string text)
+    {
+        for (var i = 0; i < text.Length - 1; i++)
+        {
+            if (text[i] != '^')
+                continue;
+
+            var next = text[i + 1];
+            if (ColorMap.ContainsKey(next) || next == '9' || CodePageMap.ContainsKey(next) || EscapeMap.ContainsKey(next))
+                return true;
+        }
+
+        return false;
     }
 }
