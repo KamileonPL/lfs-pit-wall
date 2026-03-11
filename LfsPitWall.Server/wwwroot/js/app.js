@@ -240,10 +240,12 @@ function updateDriversTable(data) {
     data.players.forEach((driver, index) => {
         const position = index + 1;
         const sectorNumbers = getSectorNumbers(data);
+        const hasGapToPrevious = driver.gapToPreviousMs !== null && driver.gapToPreviousMs !== undefined;
+        const isFightForPosition = hasGapToPrevious && driver.gapToPreviousMs > 0 && driver.gapToPreviousMs < 1000;
 
         const gap = position === 1
             ? "-"
-            : (driver.gapToPreviousMs !== null && driver.gapToPreviousMs !== undefined
+            : (hasGapToPrevious
                 ? formatTime(driver.gapToPreviousMs, true)
                 : "-");
 
@@ -315,7 +317,12 @@ function updateDriversTable(data) {
                                 ${getSectorDelta(sectorNum) ? `<span class="sector-delta">${getSectorDelta(sectorNum)}</span>` : ""}
                             </div>`).join('')}
                 </td>
-                <td class="px-4 py-3 text-sm gap-indicator">${gap}</td>
+                <td class="px-4 py-3 text-sm gap-indicator">
+                    <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
+                        ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
+                        <span>${gap}</span>
+                    </span>
+                </td>
                 <td class="px-4 py-3">
                     ${driver.fuelPercent !== null && driver.fuelPercent !== undefined ? `
                     <div class="relative w-12 h-2 bg-gray-700 rounded-full overflow-hidden">
