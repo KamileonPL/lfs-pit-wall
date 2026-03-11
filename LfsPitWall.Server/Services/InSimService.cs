@@ -448,7 +448,7 @@ public class InSimService : BackgroundService
             RecordedAt = DateTime.UtcNow
         };
 
-        driver.AddLap(lapData);
+        driver.AddLap(lapData, _raceSession.ActiveSectorCount);
         driver.LapsCompleted = packet.LapsDone;
         
         // Update last elapsed time for gap calculation (when driver crossed finish line)
@@ -499,13 +499,17 @@ public class InSimService : BackgroundService
         byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);
         driver.FuelPercent = fuelPercent;
 
-        // Update sector time
+        // Update sector time from cumulative split time
         driver.UpdateSectorTime(packet.Split, packet.STime);
+        var sectorTimeMs = driver.CurrentLapSectors.TryGetValue(packet.Split, out var sector)
+            ? sector.TimeMs
+            : packet.STime;
 
         _logger.LogDebug(
-            "🎯 Sector {Sector} | {PlayerName}: {SplitTime}ms (Elapsed: {ElapsedTime}ms) | Fuel: {Fuel} | Stops: {Stops}",
+            "🎯 Sector {Sector} | {PlayerName}: {SectorTime}ms (Split: {SplitTime}ms, Elapsed: {ElapsedTime}ms) | Fuel: {Fuel} | Stops: {Stops}",
             packet.Split,
             LfsColorConverter.RemoveColorCodes(driver.Name),
+            sectorTimeMs,
             packet.STime,
             packet.ETime,
             driver.FuelPercent.HasValue ? $"{driver.FuelPercent}%" : "N/A",
@@ -564,14 +568,22 @@ public class InSimService : BackgroundService
         // Store race parameters from IS_RST packet
         _raceSession.MaxRaceLaps = packet.RaceLaps;
         _raceSession.QualifyingMins = packet.QualMins;
+        var timingMode = packet.Timing & 0xC0;
+        var checkpointCount = packet.Timing & 0x03;
+
+        _raceSession.ActiveSectorCount = timingMode == 0xC0
+            ? 0
+            : checkpointCount + 1;
 
         _logger.LogInformation(
-            "🏁 RACE START INFO: {Track} | Race: {RaceLaps}L / Quali: {QualMins}min | Players: {NumP} | Timing: {Timing} | Wind: {Wind}",
+            "🏁 RACE START INFO: {Track} | Race: {RaceLaps}L / Quali: {QualMins}min | Players: {NumP} | Timing: {Timing} | Checkpoints: {CheckpointCount} | Sectors: {SectorCount} | Wind: {Wind}",
             trackName,
             packet.RaceLaps,
             packet.QualMins,
             packet.NumP,
             packet.Timing,
+            checkpointCount,
+            _raceSession.ActiveSectorCount,
             packet.Wind switch { 0 => "Off", 1 => "Weak", 2 => "Strong", _ => "Unknown" });
     }
 

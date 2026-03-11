@@ -22,6 +22,16 @@ public class SectorTime
 }
 
 /// <summary>
+/// Represents the best sector in the session together with its author.
+/// </summary>
+public class SessionBestSectorInfo
+{
+    public uint TimeMs { get; set; }
+    public string AuthorNameHtml { get; set; } = "";
+    public string AuthorUsername { get; set; } = "";
+}
+
+/// <summary>
 /// Represents a single lap's complete timing data (lap-centric architecture)
 /// </summary>
 public class LapData
@@ -186,57 +196,139 @@ public class Driver
     public Dictionary<int, uint> PersonalBestSectors { get; set; } = new();
 
     /// <summary>
+    /// Sector times recorded for the current in-progress lap.
+    /// </summary>
+    public Dictionary<int, SectorTime> CurrentLapSectors { get; } = new();
+
+    /// <summary>
+    /// Cumulative split times recorded for the current in-progress lap.
+    /// </summary>
+    public Dictionary<int, uint> CurrentLapSplitTimes { get; } = new();
+
+    /// <summary>
     /// Gets the current lap's sector times that have been recorded so far
     /// </summary>
     public Dictionary<int, SectorTime> GetCurrentSectorProgress()
     {
-        if (LapHistory.Count == 0)
-            return new Dictionary<int, SectorTime>();
-
-        var currentLap = LapHistory.Last();
-        return currentLap.Sectors;
+        return CurrentLapSectors.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new SectorTime
+            {
+                SectorNumber = kvp.Value.SectorNumber,
+                TimeMs = kvp.Value.TimeMs,
+                IsValid = kvp.Value.IsValid
+            });
     }
 
     /// <summary>
-    /// Updates a sector time for the current lap
+    /// Updates an in-progress lap sector from a cumulative split time.
     /// </summary>
-    public void UpdateSectorTime(int sectorNumber, uint timeMs)
+    public void UpdateSectorTime(int sectorNumber, uint splitTimeMs)
     {
-        if (LapHistory.Count == 0)
+        if (sectorNumber < 1 || sectorNumber > 3)
             return;
 
-        var currentLap = LapHistory.Last();
+        uint previousSplitTime = 0;
+        if (sectorNumber > 1)
+        {
+            CurrentLapSplitTimes.TryGetValue(sectorNumber - 1, out previousSplitTime);
+        }
+
+        uint sectorTimeMs = splitTimeMs >= previousSplitTime
+            ? splitTimeMs - previousSplitTime
+            : splitTimeMs;
+
+        CurrentLapSplitTimes[sectorNumber] = splitTimeMs;
+
         var sectorTime = new SectorTime
         {
             SectorNumber = sectorNumber,
-            TimeMs = timeMs,
+            TimeMs = sectorTimeMs,
             IsValid = true
         };
 
-        currentLap.Sectors[sectorNumber] = sectorTime;
-
-        // Update personal best for this sector
-        if (!PersonalBestSectors.ContainsKey(sectorNumber) || 
-            timeMs < PersonalBestSectors[sectorNumber])
-        {
-            PersonalBestSectors[sectorNumber] = timeMs;
-        }
+        CurrentLapSectors[sectorNumber] = sectorTime;
     }
 
     /// <summary>
-    /// Adds a completed lap to the history
+    /// Adds a completed lap to the history and finalizes sector data for that lap.
     /// </summary>
-    public void AddLap(LapData lap)
+    public void AddLap(LapData lap, int activeSectorCount)
     {
+        FinalizeCurrentLapSectors(lap, activeSectorCount);
         LapHistory.Add(lap);
 
         if (!lap.IsValid)
+        {
+            ClearCurrentLapProgress();
             return;
+        }
 
         if (PersonalBestLap == null || lap.GetAdjustedTime() < PersonalBestLap.GetAdjustedTime())
         {
             PersonalBestLap = lap;
         }
+
+        foreach (var sector in lap.Sectors.Values)
+        {
+            if (!PersonalBestSectors.TryGetValue(sector.SectorNumber, out var bestSectorTime) || sector.TimeMs < bestSectorTime)
+            {
+                PersonalBestSectors[sector.SectorNumber] = sector.TimeMs;
+            }
+        }
+
+        ClearCurrentLapProgress();
+    }
+
+    private void FinalizeCurrentLapSectors(LapData lap, int activeSectorCount)
+    {
+        foreach (var sector in CurrentLapSectors.Values)
+        {
+            if (activeSectorCount > 0 && sector.SectorNumber > activeSectorCount)
+            {
+                continue;
+            }
+
+            lap.Sectors[sector.SectorNumber] = new SectorTime
+            {
+                SectorNumber = sector.SectorNumber,
+                TimeMs = sector.TimeMs,
+                IsValid = sector.IsValid
+            };
+        }
+
+        if (activeSectorCount <= 0)
+        {
+            return;
+        }
+
+        var finalSectorNumber = activeSectorCount;
+        var previousCheckpointNumber = finalSectorNumber - 1;
+        uint previousSplitTime = 0;
+        var hasRequiredPreviousCheckpoint = previousCheckpointNumber == 0;
+
+        if (previousCheckpointNumber > 0)
+        {
+            hasRequiredPreviousCheckpoint = CurrentLapSplitTimes.TryGetValue(previousCheckpointNumber, out previousSplitTime);
+        }
+
+        if (!hasRequiredPreviousCheckpoint || lap.Sectors.ContainsKey(finalSectorNumber) || lap.LapTimeMs < previousSplitTime)
+        {
+            return;
+        }
+
+        lap.Sectors[finalSectorNumber] = new SectorTime
+        {
+            SectorNumber = finalSectorNumber,
+            TimeMs = lap.LapTimeMs - previousSplitTime,
+            IsValid = lap.IsValid
+        };
+    }
+
+    private void ClearCurrentLapProgress()
+    {
+        CurrentLapSectors.Clear();
+        CurrentLapSplitTimes.Clear();
     }
 }
 
@@ -278,6 +370,11 @@ public class RaceSession
     /// Time elapsed in current session (ms)
     /// </summary>
     public uint SessionTimeMs { get; set; }
+
+    /// <summary>
+    /// Number of active sectors reported by the current timing configuration.
+    /// </summary>
+    public int ActiveSectorCount { get; set; }
 
     /// <summary>
     /// Maximum race laps (from IS_RST)
@@ -338,6 +435,38 @@ public class RaceSession
 
                 return result;
             }
+        }
+    }
+
+    /// <summary>
+    /// Session best sector times enriched with author metadata.
+    /// </summary>
+    public Dictionary<int, SessionBestSectorInfo> GetSessionBestSectorInfos()
+    {
+        lock (_playersLock)
+        {
+            var result = new Dictionary<int, SessionBestSectorInfo>();
+
+            foreach (var driver in Players.Values)
+            {
+                foreach (var kvp in driver.PersonalBestSectors)
+                {
+                    var sectorNumber = kvp.Key;
+                    var sectorTime = kvp.Value;
+
+                    if (!result.TryGetValue(sectorNumber, out var currentBest) || sectorTime < currentBest.TimeMs)
+                    {
+                        result[sectorNumber] = new SessionBestSectorInfo
+                        {
+                            TimeMs = sectorTime,
+                            AuthorNameHtml = driver.NameHtml,
+                            AuthorUsername = driver.Username
+                        };
+                    }
+                }
+            }
+
+            return result;
         }
     }
 
@@ -514,6 +643,7 @@ public class RaceSession
             RaceFlag = 0;
             RaceInProgress = false;
             SessionTimeMs = 0;
+            ActiveSectorCount = 0;
             SessionBestLap = null;
             SessionBestLapAuthorPLID = null;
             SessionBestLapNumber = null;

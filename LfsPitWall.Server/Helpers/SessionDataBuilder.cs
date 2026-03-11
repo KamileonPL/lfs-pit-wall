@@ -12,6 +12,7 @@ public static class SessionDataBuilder
     {
         var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
         var sessionBestLap = session.SessionBestLap;
+        var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
         
         return new
         {
@@ -22,6 +23,7 @@ public static class SessionDataBuilder
             sessionTimeMs = session.SessionTimeMs,
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
+            activeSectorCount = session.ActiveSectorCount,
             players = session.GetDriversForStandings().Select(d =>
             {
                 var personalBestLap = d.PersonalBestLap;
@@ -55,6 +57,14 @@ public static class SessionDataBuilder
             sessionBestLapAuthorUsername = authorUsername,
             sessionBestLapNumber = bestLapNumber,
             sessionBestSectors = session.SessionBestSectors,
+            sessionBestSectorInfos = sessionBestSectorInfos.ToDictionary(
+                kvp => kvp.Key,
+                kvp => new
+                {
+                    timeMs = kvp.Value.TimeMs,
+                    authorNameHtml = kvp.Value.AuthorNameHtml,
+                    authorUsername = kvp.Value.AuthorUsername
+                }),
             packetType = "SESSION_UPDATE",
             updatedAt = DateTime.UtcNow.ToString("O")
         };

@@ -171,6 +171,11 @@ function formatLapDelta(lapTimeMs, referenceLapMs, suffix = "") {
     return `+${((lapTimeMs - referenceLapMs) / 1000).toFixed(3)}s${suffix}`;
 }
 
+function getSectorNumbers(data) {
+    const activeSectorCount = Number(data.activeSectorCount || 0);
+    return Array.from({ length: activeSectorCount }, (_, index) => index + 1);
+}
+
 // ── Session Info Update ───────────────────────────────────
 
 function updateSessionInfo(data) {
@@ -211,6 +216,7 @@ function updateDriversTable(data) {
     let html = "";
     data.players.forEach((driver, index) => {
         const position = index + 1;
+        const sectorNumbers = getSectorNumbers(data);
 
         const gap = position === 1 ? "-" :
             (data.players[index - 1]?.lastElapsedTimeMs && driver.lastElapsedTimeMs
@@ -225,11 +231,17 @@ function updateDriversTable(data) {
         const bestLapDelta = formatLapDelta(driver.personalBestLapMs, data.sessionBestLapMs);
         const lastLapDelta = formatLapDelta(driver.lastLapTimeMs, driver.personalBestLapMs, ' (PB)');
 
+        const getDisplayedSectorTime = (sectorNum) => {
+            const currentSectorTime = driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] : 0;
+            const bestPersonalSectorTime = driver.personalBestSectors ? driver.personalBestSectors[sectorNum] : 0;
+            return currentSectorTime || bestPersonalSectorTime || 0;
+        };
+
         const sectorTimeClass = (sectorNum) => {
-            const time = driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] : 0;
+            const displayedTime = getDisplayedSectorTime(sectorNum);
             const bestSession = data.sessionBestSectors ? data.sessionBestSectors[sectorNum] : 0;
             const bestPersonal = driver.personalBestSectors ? driver.personalBestSectors[sectorNum] : 0;
-            return getTimeClass(time, bestSession, bestPersonal);
+            return getTimeClass(displayedTime, bestSession, bestPersonal);
         };
 
         const positionBadgeClass = position <= 3
@@ -260,9 +272,9 @@ function updateDriversTable(data) {
                     </div>
                 </td>
                 <td class="px-4 py-3 text-xs">
-                    <span class="sector-time ${sectorTimeClass(1)}">S1: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[1]) || 0)}</span><br>
-                    <span class="sector-time ${sectorTimeClass(2)}">S2: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[2]) || 0)}</span><br>
-                    <span class="sector-time ${sectorTimeClass(3)}">S3: ${formatTime((driver.currentSectorProgress && driver.currentSectorProgress[3]) || 0)}</span>
+                    ${sectorNumbers.length === 0
+                        ? '<span class="text-gray-500">-</span>'
+                        : sectorNumbers.map(sectorNum => `<span class="sector-time ${sectorTimeClass(sectorNum)}">S${sectorNum}: ${formatTime(getDisplayedSectorTime(sectorNum))}</span>`).join('<br>')}
                 </td>
                 <td class="px-4 py-3 text-sm gap-indicator">${gap}</td>
                 <td class="px-4 py-3">
@@ -305,11 +317,29 @@ function updateBestLaps(data) {
         infoDiv.innerHTML = `<p style="color: #888;">-</p>`;
     }
 
-    if (data.sessionBestSectors) {
-        document.getElementById("best-s1").textContent = formatTime(data.sessionBestSectors[1]) || "-";
-        document.getElementById("best-s2").textContent = formatTime(data.sessionBestSectors[2]) || "-";
-        document.getElementById("best-s3").textContent = formatTime(data.sessionBestSectors[3]) || "-";
-    }
+    const sectorNumbers = getSectorNumbers(data);
+    const bestSectorsGrid = document.getElementById("best-sectors-grid");
+    bestSectorsGrid.className = `grid gap-2 ${sectorNumbers.length > 0 ? `grid-cols-${sectorNumbers.length}` : 'grid-cols-1'}`;
+    bestSectorsGrid.innerHTML = sectorNumbers.length === 0
+        ? `<p class="text-sm text-gray-500">No sector timing</p>`
+        : sectorNumbers.map(sectorNum => {
+            const sectorInfo = data.sessionBestSectorInfos?.[sectorNum];
+            const sectorTime = sectorInfo?.timeMs ?? data.sessionBestSectors?.[sectorNum] ?? 0;
+            const authorName = sectorInfo?.authorNameHtml || "";
+            const authorUsername = sectorInfo?.authorUsername
+                ? ` <span style="color:#AAAAAA">(${sectorInfo.authorUsername})</span>`
+                : "";
+            const authorLine = authorName
+                ? `<p class="text-xs mt-1" style="color: #c0c0c0;">${authorName}${authorUsername}</p>`
+                : `<p class="text-xs mt-1 text-gray-500">-</p>`;
+
+            return `
+            <div>
+                <p class="text-xs text-gray-500">S${sectorNum}</p>
+                <p class="text-xl font-bold text-purple-300">${formatTime(sectorTime) || "-"}</p>
+                ${authorLine}
+            </div>`;
+        }).join("");
 }
 
 // ── Debug Console ─────────────────────────────────────────
