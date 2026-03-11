@@ -10,6 +10,8 @@ public static class SessionDataBuilder
 {
     public static object Build(RaceSession session)
     {
+        var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
+        
         return new
         {
             trackName = session.TrackName,
@@ -42,13 +44,9 @@ public static class SessionDataBuilder
                 )
             }).ToList(),
             sessionBestLapMs = session.SessionBestLap?.LapTimeMs ?? 0,
-            sessionBestLapAuthorName = session.SessionBestLapAuthorPLID.HasValue
-                ? session.GetDriver(session.SessionBestLapAuthorPLID.Value)?.NameHtml ?? "Unknown"
-                : null,
-            sessionBestLapAuthorUsername = session.SessionBestLapAuthorPLID.HasValue
-                ? session.GetDriver(session.SessionBestLapAuthorPLID.Value)?.Username ?? ""
-                : null,
-            sessionBestLapNumber = session.SessionBestLapNumber,
+            sessionBestLapAuthorName = authorNameHtml,
+            sessionBestLapAuthorUsername = authorUsername,
+            sessionBestLapNumber = bestLapNumber,
             sessionBestSectors = session.SessionBestSectors,
             packetType = "SESSION_UPDATE",
             updatedAt = DateTime.UtcNow.ToString("O")

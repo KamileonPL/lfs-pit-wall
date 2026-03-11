@@ -133,7 +133,7 @@ public class Driver
     /// <summary>
     /// Driver/team color (for UI highlighting, hex format like "#FF5733")
     /// </summary>
-    public string DriverColor { get; set; } = "#7C3AED";  // Default purple
+    public string DriverColor { get; set; } = "#9CA3AF";  // Neutral gray until a real team color is assigned
 
     /// <summary>
     /// Number of pit stops
@@ -274,6 +274,12 @@ public class RaceSession
     /// </summary>
     public byte? SessionBestLapAuthorPLID { get; set; }
     public ushort? SessionBestLapNumber { get; set; }
+    
+    /// <summary>
+    /// Cached best lap author info (used if driver leaves before session ends)
+    /// </summary>
+    public string SessionBestLapAuthorNameHtml { get; set; } = "";
+    public string SessionBestLapAuthorUsername { get; set; } = "";
 
     /// <summary>
     /// Connected drivers, keyed by Player ID
@@ -337,8 +343,10 @@ public class RaceSession
         lock (_playersLock)
         {
             return Players.Values
-                .Where(p => p.PersonalBestLap != null)
-                .OrderBy(p => p.PersonalBestLap!.GetAdjustedTime())
+                .OrderBy(p => p.PersonalBestLap == null ? 1 : 0)
+                .ThenBy(p => p.PersonalBestLap?.GetAdjustedTime() ?? uint.MaxValue)
+                .ThenByDescending(p => p.LapsCompleted)
+                .ThenBy(p => p.Name)
                 .ToList(); // CRITICAL: ToList() creates snapshot before lock is released
         }
     }
@@ -354,6 +362,39 @@ public class RaceSession
                 .OrderByDescending(p => p.LapsCompleted)
                 .ThenBy(p => p.Name)
                 .ToList(); // Create snapshot
+        }
+    }
+
+    /// <summary>
+    /// Gets session best lap metadata from the current session state.
+    /// </summary>
+    public (string? NameHtml, string? Username, uint? LapNumber) GetSessionBestLapInfo()
+    {
+        lock (_playersLock)
+        {
+            var bestLap = Players.Values
+                .SelectMany(player => player.LapHistory)
+                .Where(lap => lap.IsValid)
+                .OrderBy(lap => lap.GetAdjustedTime())
+                .FirstOrDefault();
+
+            if (bestLap != null)
+            {
+                var owner = Players.Values.FirstOrDefault(player =>
+                    player.LapHistory.Any(lap => ReferenceEquals(lap, bestLap)));
+
+                if (owner != null)
+                {
+                    return (owner.NameHtml, owner.Username, bestLap.LapNumber);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(SessionBestLapAuthorNameHtml))
+            {
+                return (SessionBestLapAuthorNameHtml, SessionBestLapAuthorUsername, SessionBestLapNumber);
+            }
+
+            return (null, null, null);
         }
     }
 
@@ -376,6 +417,17 @@ public class RaceSession
         lock (_playersLock)
         {
             Players.Remove(playerId);
+        }
+    }
+
+    /// <summary>
+    /// Removes stored username by UCID - called when connection leaves (THREAD-SAFE)
+    /// </summary>
+    public void RemoveUsername(byte ucid)
+    {
+        lock (_playersLock)
+        {
+            _usernames.Remove(ucid);
         }
     }
 
@@ -403,6 +455,10 @@ public class RaceSession
             RaceFlag = 0;
             RaceInProgress = false;
             SessionTimeMs = 0;
+            SessionBestLapAuthorPLID = null;
+            SessionBestLapNumber = null;
+            SessionBestLapAuthorNameHtml = string.Empty;
+            SessionBestLapAuthorUsername = string.Empty;
             Players.Clear();
         }
     }

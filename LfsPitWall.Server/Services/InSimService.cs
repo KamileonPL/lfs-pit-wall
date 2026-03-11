@@ -248,26 +248,9 @@ public class InSimService : BackgroundService
     // ── Packet Handlers ─────────────────────────────────
     private void HandleMultiCarInfo(IS_MCI packet)
     {
-        for (int i = 0; i < packet.NumCars && i < packet.Cars.Length; i++)
-        {
-            var car = packet.Cars[i];
-            if (car.PLID > 0 && !_raceSession.Players.ContainsKey(car.PLID))
-            {
-                // Found a car that's not in our session yet - create placeholder
-                var placeholder = new Driver
-                {
-                    PlayerId = car.PLID,
-                    Name = $"Unknown Driver #{car.PLID}",
-                    CarName = "???",
-                    SkinName = "",
-                    FuelPercent = 0,  // Will be updated by IS_NPL or IS_LAP
-                    TyreTypes = new[] { (byte)0, (byte)0, (byte)0, (byte)0 }
-                };
-
-                _raceSession.AddOrUpdateDriver(placeholder);
-                _logger.LogDebug("🚗 Found car from MCI: ID {PLID}", car.PLID);
-            }
-        }
+        // IS_MCI is currently used only as movement telemetry.
+        // Driver entries are created from authoritative player/timing packets (NPL, LAP, SPX),
+        // which avoids filling the table with placeholder rows from incomplete MCI parsing.
     }
 
     /// <summary>
@@ -311,12 +294,10 @@ public class InSimService : BackgroundService
     /// </summary>
     private void HandleNewPlayer(IS_NPL packet)
     {
-        var encoding = System.Text.Encoding.GetEncoding("iso-8859-1");
-
-        var playerName = System.Text.Encoding.ASCII.GetString(packet.PName).TrimEnd('\0').Trim();
+        var playerName = LfsColorConverter.Decode(packet.PName);
         var formattedName = DriverNameHelper.FormatPlayerName(playerName);
         string carName = DriverNameHelper.ParseCarName(packet.CName);
-        var skinName = encoding.GetString(packet.SName).TrimEnd('\0').Trim();
+        var skinName = LfsColorConverter.Decode(packet.SName);
         var username = _raceSession.GetUsername(packet.UCID) ?? "";
 
         // Get existing driver if it exists, else create new
@@ -387,12 +368,15 @@ public class InSimService : BackgroundService
         // Create placeholder driver if not found
         if (driver == null)
         {
+            var driverName = $"Driver #{packet.PLID}";
             driver = new Driver
             {
                 PlayerId = packet.PLID,
-                Name = $"Driver #{packet.PLID}",
+                Name = driverName,
+                NameHtml = LfsColorConverter.ConvertToHtml(driverName),
                 CarName = "???",
                 SkinName = "",
+                Username = "",
                 FuelPercent = 0,
                 TyreTypes = new[] { (byte)0, (byte)0, (byte)0, (byte)0 }
             };
@@ -410,7 +394,8 @@ public class InSimService : BackgroundService
         }
 
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
-        driver.FuelPercent = packet.Fuel200 == 255 ? null : (byte?)(packet.Fuel200 / 2);
+        byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);
+        driver.FuelPercent = fuelPercent;
         
         // Update session elapsed time from the lap packet
         _raceSession.SessionTimeMs = packet.ETime;
@@ -425,6 +410,8 @@ public class InSimService : BackgroundService
             PenaltyMs = packet.Penalty,
             RecordedAt = DateTime.UtcNow
         };
+
+        var previousSessionBestLapTime = _raceSession.SessionBestLap?.LapTimeMs;
 
         driver.AddLap(lapData);
         driver.LapsCompleted = packet.LapsDone;
@@ -456,12 +443,15 @@ public class InSimService : BackgroundService
                 LfsColorConverter.RemoveColorCodes(driver.Name), packet.LTime);
         }
 
-        // Track session best lap - when current lap equals session best, store author and lap number
-        if (_raceSession.SessionBestLap?.LapTimeMs == packet.LTime && 
-            _raceSession.SessionBestLap.LapTimeMs == packet.LTime)
+        // Cache best-lap metadata only when the current lap beats the previous session best.
+        if (previousSessionBestLapTime == null || packet.LTime < previousSessionBestLapTime.Value)
         {
             _raceSession.SessionBestLapAuthorPLID = packet.PLID;
             _raceSession.SessionBestLapNumber = packet.LapsDone;
+            
+            // Cache author info in case driver leaves before session ends
+            _raceSession.SessionBestLapAuthorNameHtml = driver.NameHtml;
+            _raceSession.SessionBestLapAuthorUsername = driver.Username;
             
             _logger.LogInformation(
                 "🌟 SESSION BEST: {PlayerName} - {LapTime}ms [Lap {LapNum}]",
@@ -479,12 +469,15 @@ public class InSimService : BackgroundService
         // Create placeholder if not found
         if (driver == null)
         {
+            var driverName = $"Driver #{packet.PLID}";
             driver = new Driver
             {
                 PlayerId = packet.PLID,
-                Name = $"Driver #{packet.PLID}",
+                Name = driverName,
+                NameHtml = LfsColorConverter.ConvertToHtml(driverName),
                 CarName = "???",
                 SkinName = "",
+                Username = "",
                 FuelPercent = null,
                 TyreTypes = new[] { (byte)0, (byte)0, (byte)0, (byte)0 }
             };
@@ -493,7 +486,8 @@ public class InSimService : BackgroundService
         }
 
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
-        driver.FuelPercent = packet.Fuel200 == 255 ? null : (byte?)(packet.Fuel200 / 2);
+        byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);
+        driver.FuelPercent = fuelPercent;
 
         // Update sector time
         driver.UpdateSectorTime(packet.Split, packet.STime);
@@ -513,8 +507,8 @@ public class InSimService : BackgroundService
     /// </summary>
     private void HandleNewConnection(IS_NCN packet)
     {
-        var userName = System.Text.Encoding.ASCII.GetString(packet.UName).TrimEnd('\0');
-        var nickName = System.Text.Encoding.ASCII.GetString(packet.PName).TrimEnd('\0');
+        var userName = LfsColorConverter.Decode(packet.UName);
+        var nickName = LfsColorConverter.Decode(packet.PName);
         
         // Store username mapping from UCID to LFS username
         // This is used to display usernames in driver listing
@@ -533,6 +527,9 @@ public class InSimService : BackgroundService
         _logger.LogDebug(
             "🔌 Connection Leave: UCID {UCID} - Total: {Total}",
             packet.UCID, packet.Total);
+        
+        // Clean up username mapping when connection leaves
+        _raceSession.RemoveUsername(packet.UCID);
     }
 
     /// <summary>

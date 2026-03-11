@@ -1,21 +1,12 @@
 namespace LfsPitWall.Server.Models;
 
 /// <summary>
-/// Converts LFS color codes (^1, ^2, etc) to HTML with CSS colors
-/// LFS uses single character codes:
-/// ^0 - Black
-/// ^1 - Red
-/// ^2 - Green
-/// ^3 - Yellow
-/// ^4 - Blue
-/// ^5 - Magenta
-/// ^6 - Cyan
-/// ^7 - White
-/// ^S - Default/reset
-/// ^s - Alternate (same as ^S for our purposes)
+/// Decodes LFS text control sequences and converts LFS color codes to HTML.
 /// </summary>
 public static class LfsColorConverter
 {
+    private const string DefaultColor = "#6B8E23";
+
     private static readonly Dictionary<char, string> ColorMap = new()
     {
         { '0', "#000000" },  // Black
@@ -26,7 +17,115 @@ public static class LfsColorConverter
         { '5', "#FF00FF" },  // Magenta
         { '6', "#00FFFF" },  // Cyan
         { '7', "#FFFFFF" },  // White
+        { '8', DefaultColor },
     };
+
+    private static readonly Dictionary<char, char> EscapeMap = new()
+    {
+        { 'v', '|' },
+        { 'a', '*' },
+        { 'c', ':' },
+        { 'd', '\\' },
+        { 's', '/' },
+        { 'q', '?' },
+        { 't', '"' },
+        { 'l', '<' },
+        { 'r', '>' },
+        { '^', '^' },
+    };
+
+    private static readonly Dictionary<char, int> CodePageMap = new()
+    {
+        { 'L', 1252 },
+        { 'G', 28597 },
+        { 'C', 1251 },
+        { 'J', 932 },
+        { 'E', 28592 },
+        { 'T', 28599 },
+        { 'B', 28603 },
+        { 'H', 936 },
+        { 'S', 949 },
+        { 'K', 950 },
+    };
+
+    static LfsColorConverter()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+    }
+
+    /// <summary>
+    /// Decodes raw LFS bytes using inline code page switches from ColorCodes.txt.
+    /// Color control codes are preserved for later HTML conversion.
+    /// </summary>
+    public static string Decode(byte[] bytes)
+    {
+        if (bytes == null || bytes.Length == 0)
+            return string.Empty;
+
+        var result = new System.Text.StringBuilder();
+        var pendingBytes = new List<byte>();
+        var originalEncoding = System.Text.Encoding.GetEncoding(1252);
+        var currentEncoding = originalEncoding;
+
+        void FlushPending()
+        {
+            if (pendingBytes.Count == 0)
+                return;
+
+            result.Append(currentEncoding.GetString(pendingBytes.ToArray()));
+            pendingBytes.Clear();
+        }
+
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            byte current = bytes[i];
+            if (current == 0)
+                break;
+
+            if (current == '^' && i < bytes.Length - 1 && bytes[i + 1] != 0)
+            {
+                char next = (char)bytes[i + 1];
+
+                if (CodePageMap.TryGetValue(next, out var codePage))
+                {
+                    FlushPending();
+                    currentEncoding = System.Text.Encoding.GetEncoding(codePage);
+                    i++;
+                    continue;
+                }
+
+                if (next == '9')
+                {
+                    FlushPending();
+                    currentEncoding = originalEncoding;
+                    result.Append('^').Append(next);
+                    i++;
+                    continue;
+                }
+
+                if (EscapeMap.TryGetValue(next, out var escapedChar))
+                {
+                    FlushPending();
+                    result.Append(escapedChar);
+                    i++;
+                    continue;
+                }
+
+                if (ColorMap.ContainsKey(next))
+                {
+                    FlushPending();
+                    result.Append('^').Append(next);
+                    i++;
+                    continue;
+                }
+            }
+
+            pendingBytes.Add(current);
+        }
+
+        FlushPending();
+        return result.ToString().TrimEnd('\0').Trim();
+    }
 
     /// <summary>
     /// Converts LFS color-coded string to HTML with span tags and inline styles
@@ -39,7 +138,7 @@ public static class LfsColorConverter
             return lfsText;
 
         var result = new System.Text.StringBuilder();
-        string currentColor = "#FFFFFF"; // Default white
+        string? currentColor = null;
         int i = 0;
 
         while (i < lfsText.Length)
@@ -49,31 +148,26 @@ public static class LfsColorConverter
             {
                 char nextChar = lfsText[i + 1];
 
-                // Check if it's a valid color code (0-7)
-                if (char.IsDigit(nextChar) && ColorMap.ContainsKey(nextChar))
+                if (ColorMap.TryGetValue(nextChar, out var color))
                 {
-                    currentColor = ColorMap[nextChar];
+                    currentColor = color;
                     i += 2; // Skip both ^ and color character
                     continue;
                 }
-                else if (nextChar == 'S' || nextChar == 's')
+                if (nextChar == '9')
                 {
-                    // Reset to white
-                    currentColor = "#FFFFFF";
-                    i += 2; // Skip both ^ and S
-                    continue;
-                }
-                else if (nextChar == '^')
-                {
-                    // Escaped ^, show single ^
-                    result.Append("^");
+                    currentColor = null;
                     i += 2;
                     continue;
                 }
-                else
+                if (EscapeMap.TryGetValue(nextChar, out var escapedChar))
                 {
-                    // Unknown code - skip the ^ and the next character
-                    // This handles ^J, ^G, ^a, etc.
+                    AppendHtmlText(result, escapedChar.ToString(), currentColor);
+                    i += 2;
+                    continue;
+                }
+                if (CodePageMap.ContainsKey(nextChar))
+                {
                     i += 2;
                     continue;
                 }
@@ -109,9 +203,7 @@ public static class LfsColorConverter
                 
                 if (text.Length > 0)
                 {
-                    // HTML encode the text to prevent injection
-                    text = System.Net.WebUtility.HtmlEncode(text);
-                    result.Append($"<span style=\"color:{currentColor}\">{text}</span>");
+                    AppendHtmlText(result, text, currentColor);
                 }
             }
         }
@@ -136,15 +228,14 @@ public static class LfsColorConverter
             if (i < lfsText.Length - 1 && lfsText[i] == '^')
             {
                 char nextChar = lfsText[i + 1];
-                // Skip color codes and resets
-                if (char.IsDigit(nextChar) || nextChar == 'S' || nextChar == 's' || nextChar == '^')
+                if (ColorMap.ContainsKey(nextChar) || nextChar == '9' || CodePageMap.ContainsKey(nextChar))
                 {
                     i += 2;
                     continue;
                 }
-                else
+                if (EscapeMap.TryGetValue(nextChar, out var escapedChar))
                 {
-                    // Unknown code - skip both chars
+                    result.Append(escapedChar);
                     i += 2;
                     continue;
                 }
@@ -169,5 +260,20 @@ public static class LfsColorConverter
         }
 
         return result.ToString();
+    }
+
+    private static void AppendHtmlText(System.Text.StringBuilder result, string text, string? color)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        text = System.Net.WebUtility.HtmlEncode(text);
+        if (string.IsNullOrEmpty(color))
+        {
+            result.Append(text);
+            return;
+        }
+
+        result.Append($"<span style=\"color:{color}\">{text}</span>");
     }
 }

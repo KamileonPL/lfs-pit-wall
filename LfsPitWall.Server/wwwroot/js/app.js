@@ -226,8 +226,8 @@ function updateDriversTable(data) {
             ? `position-${position}`
             : "";
 
-        const driverColor = driver.driverColor || "#7C3AED";
-        const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: ${driverColor};"`;
+        const driverColor = driver.driverColor || "#9CA3AF";
+        const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: #F5F5F5;"`;
 
         html += `
             <tr class="driver-row">
@@ -274,17 +274,18 @@ function updateDriversTable(data) {
 // ── Best Laps Update ──────────────────────────────────────
 
 function updateBestLaps(data) {
-    let authorDisplay = "";
-    if (data.sessionBestLapAuthorName && data.sessionBestLapNumber) {
+    document.getElementById("session-best-lap-time").textContent = formatTime(data.sessionBestLapMs) || "-";
+
+    const infoDiv = document.getElementById("session-best-lap-info");
+    if (data.sessionBestLapAuthorName && data.sessionBestLapNumber != null) {
         const author = data.sessionBestLapAuthorName;
         const username = data.sessionBestLapAuthorUsername
             ? ` <span style="color:#AAAAAA">(${data.sessionBestLapAuthorUsername})</span>`
             : "";
-        authorDisplay = `<div style="font-size: 0.85rem; margin-top: 4px; color: #c0c0c0;">${author}${username} [Lap ${data.sessionBestLapNumber}]</div>`;
+        infoDiv.innerHTML = `<p style="color: #c0c0c0;">${author}${username}<br/><span style="font-size: 0.8rem; color: #888;">Lap ${data.sessionBestLapNumber}</span></p>`;
+    } else {
+        infoDiv.innerHTML = `<p style="color: #888;">-</p>`;
     }
-
-    document.getElementById("session-best-lap").innerHTML =
-        (formatTime(data.sessionBestLapMs) || "-") + authorDisplay;
 
     if (data.sessionBestSectors) {
         document.getElementById("best-s1").textContent = formatTime(data.sessionBestSectors[1]) || "-";
