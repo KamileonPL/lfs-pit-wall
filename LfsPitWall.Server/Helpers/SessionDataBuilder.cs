@@ -14,6 +14,10 @@ public static class SessionDataBuilder
         var sessionBestLap = session.SessionBestLap;
         var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
         var orderedDrivers = session.GetDriversForStandings().ToList();
+        var sessionTopSpeedDriver = orderedDrivers
+            .Where(driver => driver.TopSpeedKmh > 0)
+            .OrderByDescending(driver => driver.TopSpeedKmh)
+            .FirstOrDefault();
         
         return new
         {
@@ -62,6 +66,9 @@ public static class SessionDataBuilder
             sessionBestLapAuthorName = authorNameHtml,
             sessionBestLapAuthorUsername = authorUsername,
             sessionBestLapNumber = bestLapNumber,
+            sessionTopSpeedKmh = sessionTopSpeedDriver != null ? Math.Round(sessionTopSpeedDriver.TopSpeedKmh, 1) : 0,
+            sessionTopSpeedAuthorName = sessionTopSpeedDriver?.NameHtml ?? "",
+            sessionTopSpeedAuthorUsername = sessionTopSpeedDriver?.Username ?? "",
             sessionBestSectors = session.SessionBestSectors,
             sessionBestSectorInfos = sessionBestSectorInfos.ToDictionary(
                 kvp => kvp.Key,

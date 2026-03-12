@@ -346,14 +346,20 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
                     <div class="lap-time-cell">
-                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
-                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
+                        <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
+                        ${lastLapDelta ? `<span class="lap-time-delta">${lastLapDelta}</span>` : ""}
                     </div>
+                </td>
+                <td class="px-4 py-3 text-sm gap-indicator">
+                    <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
+                        ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
+                        <span>${gap}</span>
+                    </span>
                 </td>
                 <td class="px-4 py-3 font-mono text-sm">
                     <div class="lap-time-cell">
-                        <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
-                        ${lastLapDelta ? `<span class="lap-time-delta">${lastLapDelta}</span>` : ""}
+                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
+                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
                     </div>
                 </td>
                 <td class="px-4 py-3 text-xs">
@@ -364,12 +370,6 @@ function updateDriversTable(data) {
                                 <span class="sector-time ${sectorTimeClass(sectorNum)}">S${sectorNum}: ${formatTime(getDisplayedSectorTime(sectorNum))}</span>
                                 ${getSectorDelta(sectorNum) ? `<span class="sector-delta">${getSectorDelta(sectorNum)}</span>` : ""}
                             </div>`).join('')}
-                </td>
-                <td class="px-4 py-3 text-sm gap-indicator">
-                    <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
-                        ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
-                        <span>${gap}</span>
-                    </span>
                 </td>
                 <td class="px-4 py-3 text-sm font-mono text-gray-300">${formatSpeedKmh(driver.topSpeedKmh)}</td>
                 <td class="px-4 py-3">
@@ -404,6 +404,19 @@ function updateBestLaps(data) {
         infoDiv.innerHTML = `<p style="color: #c0c0c0;">${author}${username}<br/><span style="font-size: 0.8rem; color: #888;">Lap ${data.sessionBestLapNumber}</span></p>`;
     } else {
         infoDiv.innerHTML = `<p style="color: #888;">-</p>`;
+    }
+
+    document.getElementById("session-top-speed").textContent = formatSpeedKmh(data.sessionTopSpeedKmh);
+
+    const topSpeedInfoDiv = document.getElementById("session-top-speed-info");
+    if (data.sessionTopSpeedAuthorName && data.sessionTopSpeedKmh) {
+        const author = data.sessionTopSpeedAuthorName;
+        const username = data.sessionTopSpeedAuthorUsername
+            ? ` <span style="color:#AAAAAA">(${data.sessionTopSpeedAuthorUsername})</span>`
+            : "";
+        topSpeedInfoDiv.innerHTML = `<p style="color: #c0c0c0;">${author}${username}</p>`;
+    } else {
+        topSpeedInfoDiv.innerHTML = `<p style="color: #888;">-</p>`;
     }
 
     const sectorNumbers = getSectorNumbers(data);
