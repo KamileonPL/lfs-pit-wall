@@ -42,6 +42,10 @@ body {
     background: rgba(40, 40, 60, 0.8);
 }
 
+.driver-row.is-hovered {
+    background: rgba(40, 40, 60, 0.8);
+}
+
 /* --- Lap Time Highlighting --- */
 
 .session-best {

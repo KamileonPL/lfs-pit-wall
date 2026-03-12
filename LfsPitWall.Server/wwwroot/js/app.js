@@ -6,6 +6,25 @@
 // ── State ──────────────────────────────────────────────────
 
 let lastRenderState = null;
+let hoveredDriverId = null;
+
+function initializeTableHoverState() {
+    const tableBody = document.getElementById("drivers-table");
+    if (!tableBody || tableBody.dataset.hoverStateInitialized === "true") {
+        return;
+    }
+
+    tableBody.dataset.hoverStateInitialized = "true";
+
+    tableBody.addEventListener("mouseover", (event) => {
+        const row = event.target.closest("tr[data-driver-id]");
+        hoveredDriverId = row?.dataset.driverId || null;
+    });
+
+    tableBody.addEventListener("mouseleave", () => {
+        hoveredDriverId = null;
+    });
+}
 
 // ── SignalR Loading & Connection ───────────────────────────
 
@@ -270,11 +289,16 @@ function updateSessionInfo(data) {
 
 function updateDriversTable(data) {
     const tableBody = document.getElementById("drivers-table");
+    const playerIds = new Set((data.players || []).map(player => String(player.playerId)));
+
+    if (hoveredDriverId && !playerIds.has(hoveredDriverId)) {
+        hoveredDriverId = null;
+    }
 
     if (!data.players || data.players.length === 0) {
         tableBody.innerHTML = `
             <tr class="driver-row">
-                <td colspan="10" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="11" class="px-4 py-8 text-center text-gray-500">
                     Waiting for drivers...
                 </td>
             </tr>`;
@@ -332,16 +356,17 @@ function updateDriversTable(data) {
         const positionBadgeClass = position <= 3
             ? `position-${position}`
             : "";
+        const hoverClass = String(driver.playerId) === hoveredDriverId ? " is-hovered" : "";
 
         const driverColor = driver.driverColor || "#9CA3AF";
         const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: #F5F5F5;"`;
 
         html += `
-            <tr class="driver-row">
+            <tr class="driver-row${hoverClass}" data-driver-id="${driver.playerId}">
                 <td class="px-4 py-3">
                     <div class="position-badge ${positionBadgeClass}">${position}</div>
                 </td>
-                <td class="px-4 py-3 font-semibold driver-name" ${driverNameStyle} data-driver-id="${driver.playerId}"></td>
+                <td class="px-4 py-3 font-semibold driver-name" ${driverNameStyle} data-driver-name-id="${driver.playerId}"></td>
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-4 py-3">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
@@ -383,7 +408,7 @@ function updateDriversTable(data) {
 
     // Apply colored driver names via innerHTML (safe: generated server-side with HtmlEncode)
     data.players.forEach((driver) => {
-        const nameCell = tableBody.querySelector(`[data-driver-id="${driver.playerId}"]`);
+        const nameCell = tableBody.querySelector(`[data-driver-name-id="${driver.playerId}"]`);
         if (nameCell) {
             nameCell.innerHTML = driver.nameHtml || driver.name;
         }
@@ -494,6 +519,8 @@ console.warn = function (...args) {
 // ── Initialize ────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+    initializeTableHoverState();
+
     loadSignalRScript()
         .then(() => {
             debugLog("SignalR library loaded", 'info');
