@@ -54,6 +54,27 @@ function startLocalDateTimeClock() {
     localClockTimerId = window.setInterval(renderLocalDateTime, 1000);
 }
 
+async function loadAppMetadata() {
+    const versionElement = document.getElementById("app-version");
+    if (!versionElement) {
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/app-meta", { cache: "no-store" });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const metadata = await response.json();
+        if (metadata?.version) {
+            versionElement.textContent = metadata.version;
+        }
+    } catch (error) {
+        debugLog(`App metadata fallback: ${error?.message || error}`, 'warn');
+    }
+}
+
 function formatDurationClock(totalMs) {
     const safeMs = Math.max(0, Math.floor(totalMs));
     const hours = Math.floor(safeMs / 3600000);
@@ -954,6 +975,7 @@ console.warn = function (...args) {
 document.addEventListener('DOMContentLoaded', () => {
     initializeTableHoverState();
     startLocalDateTimeClock();
+    loadAppMetadata();
 
     loadSignalRScript()
         .then(() => {

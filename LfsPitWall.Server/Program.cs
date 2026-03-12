@@ -1,8 +1,10 @@
 using LfsPitWall.Server.Hubs;
+using LfsPitWall.Server.Helpers;
 using LfsPitWall.Server.Models;
 using LfsPitWall.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var appMetadata = AppMetadataProvider.Get();
 
 // Add race session singleton
 builder.Services.AddSingleton<RaceSession>();
@@ -38,6 +40,8 @@ app.UseStaticFiles();
 
 // Map SignalR hub
 app.MapHub<TimingHub>("/hubs/timing");
+
+app.MapGet("/api/app-meta", () => Results.Ok(appMetadata));
 
 // Default route to index.html
 app.MapFallbackToFile("index.html");
