@@ -818,6 +818,73 @@ public class RaceSession
     };
 
     /// <summary>
+    /// Estimates the remaining time for a lap-based race using the leader's recent pace.
+    /// Returns null when there is not enough data or the session is not a lap race.
+    /// </summary>
+    public uint? GetEstimatedRemainingTimeMs()
+    {
+        lock (_playersLock)
+        {
+            if (SessionType != 2 || !RaceInProgress || MaxRaceLaps == 0 || Players.Count == 0)
+            {
+                return null;
+            }
+
+            var leader = Players.Values
+                .OrderBy(p => p.CurrentRacePosition > 0 ? 0 : 1)
+                .ThenBy(p => p.CurrentRacePosition == 0 ? byte.MaxValue : p.CurrentRacePosition)
+                .ThenByDescending(p => p.CurrentTrackLap)
+                .ThenByDescending(p => p.CurrentTrackNode)
+                .FirstOrDefault();
+
+            if (leader == null)
+            {
+                return null;
+            }
+
+            var remainingLaps = MaxRaceLaps - Math.Min((uint)MaxRaceLaps, leader.LapsCompleted);
+            if (remainingLaps == 0)
+            {
+                return 0;
+            }
+
+            var estimatedLapTimeMs = GetEstimatedLeaderLapTimeMs(leader);
+            if (estimatedLapTimeMs == null || estimatedLapTimeMs == 0)
+            {
+                return null;
+            }
+
+            var latestCompletedLapElapsedMs = leader.LapHistory.Count > 0
+                ? leader.LapHistory[^1].ElapsedTimeMs
+                : 0u;
+            var currentLapElapsedMs = SessionTimeMs > latestCompletedLapElapsedMs
+                ? SessionTimeMs - latestCompletedLapElapsedMs
+                : 0u;
+            var totalRemainingMs = (long)remainingLaps * estimatedLapTimeMs.Value - currentLapElapsedMs;
+
+            return totalRemainingMs > 0
+                ? (uint)totalRemainingMs
+                : 0;
+        }
+    }
+
+    private static uint? GetEstimatedLeaderLapTimeMs(Driver leader)
+    {
+        var recentValidLaps = leader.LapHistory
+            .Where(lap => lap.IsValid && lap.LapTimeMs > 0)
+            .TakeLast(3)
+            .Select(lap => lap.LapTimeMs)
+            .ToList();
+
+        if (recentValidLaps.Count > 0)
+        {
+            return (uint)recentValidLaps.Average(static lapTimeMs => lapTimeMs);
+        }
+
+        return leader.PersonalBestLap?.LapTimeMs;
+    }
+
+    /// <summary>
     /// Store LFS username by connection UCID (from IS_NCN)
     /// </summary>
     public void SetUsername(byte ucid, string username)

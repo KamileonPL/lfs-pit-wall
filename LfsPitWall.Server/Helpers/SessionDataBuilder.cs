@@ -15,6 +15,7 @@ public static class SessionDataBuilder
         var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
         var orderedDrivers = session.GetDriversForStandings().ToList();
         var chatMessages = session.GetChatMessages();
+        var estimatedRemainingTimeMs = session.GetEstimatedRemainingTimeMs();
         var sessionTopSpeedDriver = orderedDrivers
             .Where(driver => driver.TopSpeedKmh > 0)
             .OrderByDescending(driver => driver.TopSpeedKmh)
@@ -30,6 +31,8 @@ public static class SessionDataBuilder
             windType = session.GetWindTypeString(),
             raceInProgress = session.RaceInProgress,
             sessionTimeMs = session.SessionTimeMs,
+            estimatedRemainingTimeMs,
+            estimatedRemainingReferenceSessionMs = estimatedRemainingTimeMs.HasValue ? (uint?)session.SessionTimeMs : null,
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
             activeSectorCount = session.ActiveSectorCount,

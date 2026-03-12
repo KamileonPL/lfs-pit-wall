@@ -111,6 +111,31 @@ function renderSessionDuration() {
     }
 
     durationElement.textContent = formatDurationClock(getDisplayedSessionTimeMs());
+    renderEstimatedRemaining();
+}
+
+function getDisplayedEstimatedRemainingMs() {
+    if (!latestSessionData || latestSessionData.estimatedRemainingTimeMs == null || latestSessionData.estimatedRemainingReferenceSessionMs == null) {
+        return null;
+    }
+
+    const baseRemainingMs = Number(latestSessionData.estimatedRemainingTimeMs);
+    const referenceSessionMs = Number(latestSessionData.estimatedRemainingReferenceSessionMs);
+    const elapsedSinceEstimateMs = Math.max(0, getDisplayedSessionTimeMs() - referenceSessionMs);
+
+    return Math.max(0, baseRemainingMs - elapsedSinceEstimateMs);
+}
+
+function renderEstimatedRemaining() {
+    const estimatedRemainingElement = document.getElementById("session-estimated-remaining");
+    if (!estimatedRemainingElement) {
+        return;
+    }
+
+    const displayedRemainingMs = getDisplayedEstimatedRemainingMs();
+    estimatedRemainingElement.textContent = displayedRemainingMs == null
+        ? "Est. remaining: -"
+        : `Est. remaining: ${formatDurationClock(displayedRemainingMs)}`;
 }
 
 function startSessionClock() {
@@ -756,6 +781,7 @@ function updateSessionInfo(data) {
     const maxLaps = Math.max(0, ...data.players.map(p => p.lapsCompleted || 0));
     const displayMaxLaps = data.maxRaceLaps || maxLaps;
     document.getElementById("max-laps").textContent = `${maxLaps}/${displayMaxLaps} Laps`;
+    renderEstimatedRemaining();
 }
 
 // ── Chat Panel ───────────────────────────────────────────
