@@ -21,10 +21,17 @@
                             <p class="text-gray-400">Live Timing Dashboard</p>
                         </div>
                     </div>
-                    <div id="connection-status" class="text-right">
-                        <div class="inline-block px-4 py-2 rounded bg-red-900 text-red-200">
-                            <span class="inline-block w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-                            Connecting...
+                    <div class="header-status-stack text-right">
+                        <p class="live-datetime-inline" aria-label="Current local date and time">
+                            <span id="live-local-time">--:--:--</span>
+                            <span class="live-datetime-separator">•</span>
+                            <span id="live-local-date">-- --- ----</span>
+                        </p>
+                        <div id="connection-status">
+                            <div class="inline-block px-4 py-2 rounded bg-red-900 text-red-200">
+                                <span class="inline-block w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+                                Connecting...
+                            </div>
                         </div>
                     </div>
                 </div>

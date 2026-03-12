@@ -15,6 +15,7 @@ let lapHistoryHideTimer = null;
 let lastPointerClientX = null;
 let lastPointerClientY = null;
 let isLapHistoryTooltipHovered = false;
+let localClockTimerId = null;
 let sessionClockTimerId = null;
 let sessionClockBaseMs = 0;
 let sessionClockSyncedAtMs = 0;
@@ -23,6 +24,35 @@ let sessionClockRunning = false;
 const driverLapHistoryCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
+
+function renderLocalDateTime() {
+    const timeElement = document.getElementById("live-local-time");
+    const dateElement = document.getElementById("live-local-date");
+    if (!timeElement || !dateElement) {
+        return;
+    }
+
+    const now = new Date();
+    timeElement.textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+    dateElement.textContent = now.toLocaleDateString([], {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+    });
+}
+
+function startLocalDateTimeClock() {
+    if (localClockTimerId !== null) {
+        return;
+    }
+
+    renderLocalDateTime();
+    localClockTimerId = window.setInterval(renderLocalDateTime, 1000);
+}
 
 function formatDurationClock(totalMs) {
     const safeMs = Math.max(0, Math.floor(totalMs));
@@ -923,6 +953,7 @@ console.warn = function (...args) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initializeTableHoverState();
+    startLocalDateTimeClock();
 
     loadSignalRScript()
         .then(() => {
