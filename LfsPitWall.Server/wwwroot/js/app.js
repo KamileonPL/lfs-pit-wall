@@ -14,9 +14,84 @@ let lapHistoryShowTimer = null;
 let lapHistoryHideTimer = null;
 let lastPointerClientX = null;
 let lastPointerClientY = null;
+let sessionClockTimerId = null;
+let sessionClockBaseMs = 0;
+let sessionClockSyncedAtMs = 0;
+let sessionClockLastServerMs = 0;
+let sessionClockRunning = false;
 const driverLapHistoryCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
+
+function formatDurationClock(totalMs) {
+    const safeMs = Math.max(0, Math.floor(totalMs));
+    const hours = Math.floor(safeMs / 3600000);
+    const minutes = Math.floor((safeMs % 3600000) / 60000);
+    const seconds = Math.floor((safeMs % 60000) / 1000);
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getDisplayedSessionTimeMs() {
+    if (!sessionClockRunning) {
+        return sessionClockBaseMs;
+    }
+
+    return sessionClockBaseMs + Math.max(0, Date.now() - sessionClockSyncedAtMs);
+}
+
+function renderSessionDuration() {
+    const durationElement = document.getElementById("session-duration");
+    if (!durationElement) {
+        return;
+    }
+
+    durationElement.textContent = formatDurationClock(getDisplayedSessionTimeMs());
+}
+
+function startSessionClock() {
+    if (sessionClockTimerId !== null) {
+        return;
+    }
+
+    sessionClockTimerId = window.setInterval(renderSessionDuration, 250);
+}
+
+function stopSessionClock() {
+    if (sessionClockTimerId === null) {
+        return;
+    }
+
+    window.clearInterval(sessionClockTimerId);
+    sessionClockTimerId = null;
+}
+
+function syncSessionClock(data) {
+    const nextServerMs = Number(data.sessionTimeMs || 0);
+    const now = Date.now();
+    const currentDisplayedMs = getDisplayedSessionTimeMs();
+    const isClockReset = nextServerMs === 0 || nextServerMs + 1000 < sessionClockLastServerMs;
+
+    sessionClockLastServerMs = nextServerMs;
+
+    if (isClockReset) {
+        sessionClockBaseMs = nextServerMs;
+        sessionClockSyncedAtMs = now;
+        sessionClockRunning = nextServerMs > 0;
+    } else {
+        sessionClockBaseMs = Math.max(currentDisplayedMs, nextServerMs);
+        sessionClockSyncedAtMs = now;
+        sessionClockRunning = true;
+    }
+
+    if (sessionClockRunning) {
+        startSessionClock();
+    } else {
+        stopSessionClock();
+    }
+
+    renderSessionDuration();
+}
 
 function getLapHistoryTrigger(element) {
     return element?.closest?.("[data-last-lap-driver-id]") || null;
@@ -385,11 +460,15 @@ function initializeConnection() {
     connection.onclose(error => {
         debugLog(`Connection closed: ${error?.message || 'Unknown'}`, 'error');
         updateConnectionStatus(false, "Disconnected");
+        sessionClockRunning = false;
+        stopSessionClock();
+        renderSessionDuration();
     });
 
     connection.on("ReceiveSessionUpdate", (data) => {
         syncLapHistoryCache(data);
         latestSessionData = data;
+        syncSessionClock(data);
         updateSessionInfo(data);
         updateDriversTable(data);
         updateBestLaps(data);
@@ -581,12 +660,6 @@ function updateSessionInfo(data) {
     const maxLaps = Math.max(0, ...data.players.map(p => p.lapsCompleted || 0));
     const displayMaxLaps = data.maxRaceLaps || maxLaps;
     document.getElementById("max-laps").textContent = `${maxLaps}/${displayMaxLaps} Laps`;
-
-    const hours = Math.floor(data.sessionTimeMs / 3600000);
-    const minutes = Math.floor((data.sessionTimeMs % 3600000) / 60000);
-    const seconds = Math.floor((data.sessionTimeMs % 60000) / 1000);
-    document.getElementById("session-duration").textContent =
-        `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 // ── Drivers Table Update ──────────────────────────────────
