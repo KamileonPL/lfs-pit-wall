@@ -7,10 +7,12 @@ It is designed to be fast to run, easy to understand, and practical for real ses
 ## What It Does
 
 - Live standings for practice, qualifying, and race sessions
+- Live track map with driver markers, selection, and synchronized driver legend
 - Session best lap, best sectors, and session top speed
 - Driver lap history tooltip on demand
 - Live race clock with smooth frontend interpolation
 - Estimated remaining race time for lap-based races
+- Race progress overlay with laps completed and track name
 - LFS chat panel fed from InSim message packets
 - Multiplayer host name display with LFS color support
 - Lightweight web UI with no database requirement
@@ -54,10 +56,20 @@ dotnet run --project "LfsPitWall.Server/LfsPitWall.Server.csproj"
 
 ## Current Focus
 
-`v0.1` is focused on getting the live race-day workflow right first:
+`v0.2` is focused on a stronger live race-day dashboard with a production-ready map layer:
 
 - real-time session visibility with a lightweight web UI
+- a live track map that stays readable during racing, spectating, and pit activity
+- lower frontend overhead through cached map geometry and paused hidden-map rendering
 - a clean in-memory session model that is ready for future history and persistence features
+
+## New In v0.2
+
+- Live standings can be toggled into a live track map view
+- Driver legend is compact, scrollable, and synchronized with visible map drivers
+- Map rendering ignores stale telemetry, pit-lane noise, and race-start grid distortion
+- Same-track race restarts preserve collected map geometry instead of rebuilding from scratch
+- Version metadata is surfaced consistently through the app footer and app metadata endpoint
 
 ## Project Structure
 
@@ -159,6 +171,6 @@ Contributions are welcome.
 
 ## Status
 
-Current project version: `v0.1`
+Current project version: `v0.2`
 
-The project already works as a solid live timing dashboard and is being extended carefully toward a broader pit-wall style tool.
+The project already works as a solid live timing dashboard with a usable live map, and is being extended carefully toward a broader pit-wall style tool.
