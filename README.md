@@ -1,105 +1,164 @@
-# **LFS Pit Wall** by Kamileon
+# LFS Pit Wall by KamileonPL
 
-Lightweight Live Timing server for [Live for Speed](https://www.lfs.net) racing simulator.
+LFS Pit Wall is a lightweight live timing and race-monitoring dashboard for [Live for Speed](https://www.lfs.net), powered by InSim and built with ASP.NET Core, SignalR, and a simple HTML/JavaScript frontend.
 
-Key Features:
-- Live Timing for Practice/Qual/Race with friendly HTML Frontend.
+It is designed to be fast to run, easy to understand, and practical for real sessions: local testing, hosted racing, and future race-history features.
 
----
+## What It Does
 
-### 🤝 Contributing & Open Source
-This project is **fully open-source** and I'm more than happy to see the community involved! Also AI-based code is welcome, but always PR-based to let me review the quality and complience.
+- Live standings for practice, qualifying, and race sessions
+- Session best lap, best sectors, and session top speed
+- Driver lap history tooltip on demand
+- Live race clock with smooth frontend interpolation
+- Estimated remaining race time for lap-based races
+- LFS chat panel fed from InSim message packets
+- Multiplayer host name display with LFS color support
+- Lightweight web UI with no database requirement
 
-Feel free to **open a Pull Request** or report an issue. Let's build the best LFS telemetry tool together!
+## Tech Stack
 
---- 
+- .NET 9 / ASP.NET Core
+- SignalR for real-time updates
+- Live for Speed InSim over TCP
+- Plain HTML, CSS, and JavaScript frontend
 
-### 🚀 Production build (e.g. for VPS Server)
+## Quick Start
 
-For production build with `<PublishAot>true</PublishAot>` please install [C++ Build Tools]() from "Desktop development with C++" package.
+1. Install the [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0).
+2. Start Live for Speed and enable InSim, for example:
 
-Set your target [LFS server config](https://www.lfs.net/hosting/admin) in [appsettings.json](/LfsPitWall.Server/appsettings.json) config file:
+```txt
+/insim 29999
+```
+
+3. Configure the target host in [LfsPitWall.Server/appsettings.json](LfsPitWall.Server/appsettings.json):
+
 ```json
-"InSim": {
-"Host": "127.0.0.1",
-"Port": 29999
+{
+    "InSim": {
+        "Host": "127.0.0.1",
+        "Port": 29999,
+        "Name": "LFS Pit Wall",
+        "AdminPassword": ""
+    }
 }
 ```
 
-Please uncomment `<PublishAot>true</PublishAot>`
-in [LfsPitWall.Server.csproj](/LfsPitWall.Server/LfsPitWall.Server.csproj).
+4. Run the server:
 
-#### Option 1: Local Production Build (Windows)
-Native AOT compilation on your machine:
+```bash
+dotnet run --project "LfsPitWall.Server/LfsPitWall.Server.csproj"
+```
 
-```Bash
+5. Open the local dashboard in your browser.
+
+## Current Focus
+
+`v0.1` is focused on getting the live race-day workflow right first:
+
+- real-time session visibility with a lightweight web UI
+- a clean in-memory session model that is ready for future history and persistence features
+
+## Project Structure
+
+- [LfsPitWall.Server](LfsPitWall.Server) - ASP.NET Core app, InSim client, SignalR hub, session model
+- [LfsPitWall.Server/wwwroot](LfsPitWall.Server/wwwroot) - frontend dashboard
+- [Docs](Docs) - reference documents for InSim and related protocol notes
+
+<details>
+<summary><strong>Local Development</strong></summary>
+
+### Recommended Flow
+
+Use the standard project run command:
+
+```bash
+dotnet run --project "LfsPitWall.Server/LfsPitWall.Server.csproj"
+```
+
+### Notes
+
+- `appsettings.json` is the main runtime config.
+- `appsettings.Development.json` is optional and can stay empty if you do not need environment-specific overrides.
+- The current development flow relies on InSim only. OutSim and OutGauge are not required for the existing dashboard.
+
+</details>
+
+<details>
+<summary><strong>Remote Server / Hosted LFS Setup</strong></summary>
+
+For a remote LFS host, point [LfsPitWall.Server/appsettings.json](LfsPitWall.Server/appsettings.json) at the target server and InSim port.
+
+Example:
+
+```json
+{
+    "InSim": {
+        "Host": "YOUR_LFS_HOST",
+        "Port": 29999,
+        "Name": "LFS Pit Wall",
+        "AdminPassword": "YOUR_ADMIN_PASSWORD"
+    }
+}
+```
+
+Important:
+
+- The remote LFS server must have InSim enabled.
+- If the host uses IP allow-listing for InSim, your application machine must be whitelisted.
+- If an admin password is configured on the host, the same password must be provided here.
+
+</details>
+
+<details>
+<summary><strong>Production Publish</strong></summary>
+
+### Standard Publish
+
+Windows:
+
+```bash
 dotnet publish -c Release -r win-x64 --self-contained
 ```
-Output:
-> bin/Release/net9.0/win-x64/publish/LfsPitWall.Server.exe
 
+Linux:
 
-#### Option 2: Remote Deployment (Linux)
-Generate the binary for your Linux server:
-
-```Bash
+```bash
 dotnet publish -c Release -r linux-x64 --self-contained
 ```
-Output:
-> bin/Release/net9.0/linux-x64/publish/LfsPitWall.Server
 
-## 🛠️ Development (Local)
+### Native AOT
 
-### How to build?
-1. Install [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0):
-    ```
-    dotnet --version
-    ```
-    For development in Visual Studio Code please install `C# Dev Kit dla VS Code` (recommended).
+The project file currently keeps Native AOT optional in [LfsPitWall.Server/LfsPitWall.Server.csproj](LfsPitWall.Server/LfsPitWall.Server.csproj).
 
-2. Setup LFS ports in your `cfg.txt` config file in `LFS` folder:
-    ```yaml
-    OutSim Mode 1
-    OutSim Delay 1
-    OutSim IP 127.0.0.1
-    OutSim Port 30001
-    OutSim ID 0
-    OutSim Opts 1ff
-    OutGauge Mode 2
-    OutGauge Delay 1
-    OutGauge IP 127.0.0.1
-    OutGauge Port 30000
-    OutGauge ID 0
-    ```
-3. Launch `Live For Speed` locally and type `t` and start your local "insim" server:
-    ```c
-    /insim 29999
-    ```
-4. Set your connection config inside [appsettings.Development.json](/LfsPitWall.Server/appsettings.Development.json):
-    ```json
-    {
-    "InSim": {
-        "Host": "127.0.0.1",
-        "Port": 29999
-    }
-    ```
-5. Launch **LFS Pit Wall** by Kamileon
-    ```bash
-    cd LfsPitWall.Server
-    dotnet watch
-    ```
-6. Have Fun!
+If you want to test AOT publishing, enable:
 
-### 📁 Project Structure
-- [/LfsPitWall.Server](/LfsPitWall.Server/) - Main ASP.NET Core application & InSim logic.
-- [/Docs](/Docs/) - App architecture, InSim protocol specifications, and development roadmap.
-- [/wwwroot](/LfsPitWall.Server/wwwroot/) - Live Timing Web Dashboard (Frontend).
+```xml
+<PublishAot>true</PublishAot>
+```
 
-### 📜 Changelog
+Only do that when you actually want an AOT build and have the required native toolchain installed.
 
-### [v0.1] - Initial Setup
-- Created project structure with .NET 9 and Web API template.
-- Added InSim protocol documentation in `/Docs`.
-- Configured Native AOT support for high-performance builds.
-- Added basic `appsettings.json` configuration for InSim connection.
-- Initialized Git repository and GitHub integration.
+</details>
+
+## Documentation
+
+Useful reference files in [Docs](Docs):
+
+- [Docs/InSim.txt](Docs/InSim.txt) - main InSim protocol reference
+- [Docs/Commands.txt](Docs/Commands.txt) - LFS text commands
+- [Docs/ColorCodes.txt](Docs/ColorCodes.txt) - LFS text formatting and color codes
+
+## Contributing
+
+Contributions are welcome.
+
+- Open an issue if something is broken or unclear
+- Open a pull request if you want to improve the app
+- AI-assisted changes are fine, but reviewable PR quality still matters
+
+## Status
+
+Current project version: `v0.1`
+
+The project already works as a solid live timing dashboard and is being extended carefully toward a broader pit-wall style tool.
