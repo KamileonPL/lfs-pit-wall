@@ -8,6 +8,7 @@ var appMetadata = AppMetadataProvider.Get();
 
 // Add race session singleton
 builder.Services.AddSingleton<RaceSession>();
+builder.Services.AddSingleton<SessionLifecycleManager>();
 
 // Add CORS
 builder.Services.AddCors(options =>

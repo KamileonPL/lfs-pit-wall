@@ -12,6 +12,7 @@ public class InSimService : BackgroundService
 {
     private readonly ILogger<InSimService> _logger;
     private readonly RaceSession _raceSession;
+    private readonly SessionLifecycleManager _sessionLifecycleManager;
     private readonly PacketDispatcher _dispatcher;
     private readonly string _host;
     private readonly int _port;
@@ -23,10 +24,11 @@ public class InSimService : BackgroundService
 
     private const int KeepAliveIntervalMs = 30000;
 
-    public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession)
+    public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession, SessionLifecycleManager sessionLifecycleManager)
     {
         _logger = logger;
         _raceSession = raceSession;
+        _sessionLifecycleManager = sessionLifecycleManager;
         _host = configuration["InSim:Host"] ?? "127.0.0.1";
         _port = int.TryParse(configuration["InSim:Port"], out var p) ? p : 29999;
         _adminPassword = configuration["InSim:AdminPassword"] ?? string.Empty;
@@ -362,7 +364,7 @@ public class InSimService : BackgroundService
 
             driver.UpdateLiveTelemetry(car.Node, car.Lap, car.Position, car.X, car.Y, car.Heading, car.Speed);
 
-            if (driver.ShouldContributeToTrackMap(_raceSession.SessionType == 2))
+            if (driver.ShouldContributeToTrackMap())
             {
                 _raceSession.UpdateTrackMapNode(car.Node, car.X, car.Y);
             }
@@ -682,6 +684,13 @@ public class InSimService : BackgroundService
     {
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
         var normalizedTrackName = string.IsNullOrEmpty(trackName) ? "Unknown" : trackName;
+        var didResetSession = _sessionLifecycleManager.ObserveRaceStart(
+            normalizedTrackName,
+            packet.RaceLaps,
+            packet.QualMins,
+            packet.Timing,
+            packet.ReqI != 0);
+
         if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, normalizedTrackName, StringComparison.OrdinalIgnoreCase))
         {
             _raceSession.ClearTrackMap();
@@ -690,6 +699,8 @@ public class InSimService : BackgroundService
         _raceSession.TrackName = normalizedTrackName;
         _raceSession.WeatherType = packet.Weather;
         _raceSession.WindType = packet.Wind;
+        _raceSession.SessionType = packet.RaceLaps == 0 ? (byte)1 : (byte)2;
+        _raceSession.RaceInProgress = packet.RaceLaps > 0;
         
         // Store race parameters from IS_RST packet
         _raceSession.MaxRaceLaps = packet.RaceLaps;
@@ -711,6 +722,11 @@ public class InSimService : BackgroundService
             checkpointCount,
                 _raceSession.ActiveSectorCount,
                 _raceSession.GetWindTypeString());
+
+        if (didResetSession)
+        {
+            _ = RequestInitialDataAsync();
+        }
     }
 
     // ── Connection Cleanup ──────────────────────────────

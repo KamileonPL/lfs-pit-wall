@@ -501,11 +501,10 @@ public class Driver
         return snapshotTimeUtc - LastLiveTelemetryAtUtc.Value <= maxTelemetryAge;
     }
 
-    public bool ShouldContributeToTrackMap(bool isRaceSession)
+    public bool ShouldContributeToTrackMap()
     {
         return HasWorldPosition
             && CurrentRacePosition > 0
-            && (!isRaceSession || LapsCompleted > 0)
             && !IsInPitLane
             && !IsPitStopActive;
     }
@@ -1102,12 +1101,15 @@ public class RaceSession
             RaceInProgress = false;
             SessionTimeMs = 0;
             ActiveSectorCount = 0;
+            MaxRaceLaps = 0;
+            QualifyingMins = 0;
             SessionBestLap = null;
             SessionBestLapAuthorPLID = null;
             SessionBestLapNumber = null;
             SessionBestLapAuthorNameHtml = string.Empty;
             SessionBestLapAuthorUsername = string.Empty;
             ChatRevision = 0;
+            _usernames.Clear();
             _chatMessages.Clear();
             _trackMapNodes.Clear();
             _trackMapRevision = 0;
