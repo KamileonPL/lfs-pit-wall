@@ -46,4 +46,27 @@ public class TimingHub : Hub
         var sessionData = SessionDataBuilder.Build(_raceSession);
         await Clients.Caller.SendAsync("ReceiveSessionUpdate", sessionData);
     }
+
+    public Task<object> GetDriverLapHistory(byte playerId)
+    {
+        var lapHistory = _raceSession.GetDriverSnapshot(playerId, driver => (object)new
+        {
+            playerId = driver.PlayerId,
+            laps = driver.LapHistory
+                .OrderByDescending(lap => lap.LapNumber)
+                .Select(lap => new
+                {
+                    lapNumber = lap.LapNumber,
+                    lapTimeMs = lap.LapTimeMs,
+                    isValid = lap.IsValid
+                })
+                .ToList()
+        });
+
+        return Task.FromResult(lapHistory ?? new
+        {
+            playerId,
+            laps = Array.Empty<object>()
+        } as object);
+    }
 }

@@ -716,6 +716,19 @@ public class RaceSession
     }
 
     /// <summary>
+    /// Projects driver data under the session lock and returns a snapshot-safe result.
+    /// </summary>
+    public T? GetDriverSnapshot<T>(byte playerId, Func<Driver, T> snapshotFactory)
+    {
+        lock (_playersLock)
+        {
+            return Players.TryGetValue(playerId, out var driver)
+                ? snapshotFactory(driver)
+                : default;
+        }
+    }
+
+    /// <summary>
     /// Resets the entire session
     /// </summary>
     public void Reset()

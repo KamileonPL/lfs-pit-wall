@@ -5,8 +5,93 @@
 
 // ── State ──────────────────────────────────────────────────
 
-let lastRenderState = null;
 let hoveredDriverId = null;
+let hoveredLapHistoryDriverId = null;
+let visibleLapHistoryDriverId = null;
+let latestSessionData = null;
+let lapHistorySessionKey = null;
+let lapHistoryShowTimer = null;
+let lapHistoryHideTimer = null;
+let lastPointerClientX = null;
+let lastPointerClientY = null;
+const driverLapHistoryCache = new Map();
+const LAP_HISTORY_SHOW_DELAY_MS = 240;
+const LAP_HISTORY_HIDE_DELAY_MS = 80;
+
+function getLapHistoryTrigger(element) {
+    return element?.closest?.("[data-last-lap-driver-id]") || null;
+}
+
+function clearLapHistoryTimers() {
+    window.clearTimeout(lapHistoryShowTimer);
+    window.clearTimeout(lapHistoryHideTimer);
+    lapHistoryShowTimer = null;
+    lapHistoryHideTimer = null;
+}
+
+function refreshLapHistoryTriggerStyles() {
+    document.querySelectorAll("[data-last-lap-driver-id]").forEach((trigger) => {
+        const driverId = String(trigger.dataset.lastLapDriverId || "");
+        trigger.classList.toggle("is-hovered", driverId === hoveredLapHistoryDriverId);
+        trigger.classList.toggle("is-active", driverId === visibleLapHistoryDriverId);
+    });
+}
+
+function setLapHistoryHoverTarget(driverId) {
+    const nextDriverId = driverId ? String(driverId) : null;
+    if (hoveredLapHistoryDriverId === nextDriverId) {
+        if (visibleLapHistoryDriverId === nextDriverId) {
+            updateLapHistoryTooltip();
+        }
+
+        refreshLapHistoryTriggerStyles();
+        return;
+    }
+
+    hoveredLapHistoryDriverId = nextDriverId;
+    refreshLapHistoryTriggerStyles();
+    window.clearTimeout(lapHistoryShowTimer);
+    window.clearTimeout(lapHistoryHideTimer);
+
+    if (!nextDriverId) {
+        lapHistoryHideTimer = window.setTimeout(() => {
+            visibleLapHistoryDriverId = null;
+            refreshLapHistoryTriggerStyles();
+            hideLapHistoryTooltip();
+        }, LAP_HISTORY_HIDE_DELAY_MS);
+        return;
+    }
+
+    if (visibleLapHistoryDriverId === nextDriverId) {
+        refreshLapHistoryTriggerStyles();
+        updateLapHistoryTooltip();
+        return;
+    }
+
+    lapHistoryShowTimer = window.setTimeout(() => {
+        if (hoveredLapHistoryDriverId !== nextDriverId) {
+            return;
+        }
+
+        visibleLapHistoryDriverId = nextDriverId;
+        refreshLapHistoryTriggerStyles();
+        const driver = getDriverById(nextDriverId);
+        if (driver) {
+            ensureDriverLapHistory(driver);
+        }
+
+        updateLapHistoryTooltip();
+    }, LAP_HISTORY_SHOW_DELAY_MS);
+}
+
+function syncLapHistoryHoverState() {
+    if (lastPointerClientX == null || lastPointerClientY == null) {
+        return;
+    }
+
+    const trigger = getLapHistoryTrigger(document.elementFromPoint(lastPointerClientX, lastPointerClientY));
+    setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
+}
 
 function initializeTableHoverState() {
     const tableBody = document.getElementById("drivers-table");
@@ -16,14 +101,221 @@ function initializeTableHoverState() {
 
     tableBody.dataset.hoverStateInitialized = "true";
 
-    tableBody.addEventListener("mouseover", (event) => {
+    tableBody.addEventListener("mousemove", (event) => {
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+
         const row = event.target.closest("tr[data-driver-id]");
         hoveredDriverId = row?.dataset.driverId || null;
+
+        const trigger = getLapHistoryTrigger(event.target);
+        setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
     });
 
     tableBody.addEventListener("mouseleave", () => {
         hoveredDriverId = null;
+        setLapHistoryHoverTarget(null);
     });
+
+    window.addEventListener("scroll", () => {
+        if (visibleLapHistoryDriverId) {
+            updateLapHistoryTooltip();
+        }
+    }, true);
+
+    window.addEventListener("resize", () => {
+        syncLapHistoryHoverState();
+        updateLapHistoryTooltip();
+    });
+}
+
+function getDriverById(playerId) {
+    return latestSessionData?.players?.find(driver => String(driver.playerId) === String(playerId)) || null;
+}
+
+function syncLapHistoryCache(data) {
+    const nextSessionKey = [
+        data.trackName || "",
+        data.sessionType || "",
+        data.maxRaceLaps || 0,
+        data.qualifyingMins || 0
+    ].join("|");
+
+    const isNewSession = lapHistorySessionKey !== null && (
+        lapHistorySessionKey !== nextSessionKey ||
+        Number(data.sessionTimeMs || 0) < Number(latestSessionData?.sessionTimeMs || 0)
+    );
+
+    if (isNewSession) {
+        driverLapHistoryCache.clear();
+        clearLapHistoryTimers();
+        hoveredLapHistoryDriverId = null;
+        visibleLapHistoryDriverId = null;
+        refreshLapHistoryTriggerStyles();
+        hideLapHistoryTooltip();
+    }
+
+    lapHistorySessionKey = nextSessionKey;
+
+    const activeDriverIds = new Set((data.players || []).map(driver => String(driver.playerId)));
+    for (const cachedDriverId of driverLapHistoryCache.keys()) {
+        if (!activeDriverIds.has(cachedDriverId)) {
+            driverLapHistoryCache.delete(cachedDriverId);
+        }
+    }
+
+    for (const driver of data.players || []) {
+        const driverId = String(driver.playerId);
+        const cached = driverLapHistoryCache.get(driverId);
+        if (cached && cached.lapCount > Number(driver.lastLapNumber || 0)) {
+            driverLapHistoryCache.delete(driverId);
+        }
+    }
+}
+
+function getOrCreateLapHistoryTooltip() {
+    let tooltip = document.getElementById("lap-history-tooltip");
+    if (tooltip) {
+        return tooltip;
+    }
+
+    tooltip = document.createElement("div");
+    tooltip.id = "lap-history-tooltip";
+    tooltip.className = "lap-history-tooltip";
+    document.body.appendChild(tooltip);
+    return tooltip;
+}
+
+function hideLapHistoryTooltip() {
+    const tooltip = document.getElementById("lap-history-tooltip");
+    if (!tooltip) {
+        return;
+    }
+
+    tooltip.classList.remove("is-visible");
+    tooltip.innerHTML = "";
+}
+
+function renderLapHistoryTooltip(driver) {
+    const lapCount = Number(driver.lastLapNumber || 0);
+    if (lapCount === 0) {
+        return `
+            <div class="lap-history-tooltip-title">Lap History</div>
+            <div class="lap-history-tooltip-empty">No completed laps yet.</div>`;
+    }
+
+    const cached = driverLapHistoryCache.get(String(driver.playerId));
+    if (!cached || cached.loading) {
+        return `
+            <div class="lap-history-tooltip-title">Lap History</div>
+            <div class="lap-history-tooltip-empty">Loading lap history...</div>`;
+    }
+
+    if (!Array.isArray(cached.laps) || cached.laps.length === 0) {
+        return `
+            <div class="lap-history-tooltip-title">Lap History</div>
+            <div class="lap-history-tooltip-empty">No lap history available.</div>`;
+    }
+
+    const bestLapTimeMs = Number(driver.personalBestLapMs || 0);
+    const rows = cached.laps.map(lap => {
+        const isPersonalBest = bestLapTimeMs > 0 && Number(lap.lapTimeMs) === bestLapTimeMs;
+        const invalidBadge = lap.isValid ? "" : '<span class="lap-history-tooltip-badge">Invalid</span>';
+
+        return `
+            <div class="lap-history-tooltip-row">
+                <span class="lap-history-tooltip-label">Lap ${lap.lapNumber}</span>
+                <div class="lap-history-tooltip-value">
+                    ${invalidBadge}
+                    <span class="lap-history-tooltip-time${isPersonalBest ? ' is-personal-best' : ''}">${formatTime(lap.lapTimeMs)}</span>
+                </div>
+            </div>`;
+    }).join("");
+
+    return `
+        <div class="lap-history-tooltip-title">Lap History</div>
+        <div class="lap-history-tooltip-list">${rows}</div>`;
+}
+
+function positionLapHistoryTooltip(trigger, tooltip) {
+    const rect = trigger.getBoundingClientRect();
+    const margin = 12;
+    const gap = 14;
+
+    tooltip.style.left = "0px";
+    tooltip.style.top = "0px";
+    tooltip.style.visibility = "hidden";
+    tooltip.classList.add("is-visible");
+
+    const tooltipWidth = tooltip.offsetWidth;
+    const tooltipHeight = tooltip.offsetHeight;
+    let left = rect.right + gap;
+    if (left + tooltipWidth > window.innerWidth - margin) {
+        left = rect.left - tooltipWidth - gap;
+    }
+    if (left < margin) {
+        left = Math.max(margin, window.innerWidth - tooltipWidth - margin);
+    }
+
+    const centeredTop = rect.top + (rect.height / 2) - (tooltipHeight / 2);
+    const top = Math.max(margin, Math.min(centeredTop, window.innerHeight - tooltipHeight - margin));
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.visibility = "visible";
+}
+
+function updateLapHistoryTooltip() {
+    const tooltip = getOrCreateLapHistoryTooltip();
+    if (!visibleLapHistoryDriverId) {
+        hideLapHistoryTooltip();
+        return;
+    }
+
+    const driver = getDriverById(visibleLapHistoryDriverId);
+    const trigger = document.querySelector(`[data-last-lap-driver-id="${visibleLapHistoryDriverId}"]`);
+    if (!driver || !trigger) {
+        hideLapHistoryTooltip();
+        return;
+    }
+
+    tooltip.innerHTML = renderLapHistoryTooltip(driver);
+    positionLapHistoryTooltip(trigger, tooltip);
+}
+
+async function ensureDriverLapHistory(driver) {
+    const lapCount = Number(driver.lastLapNumber || 0);
+    const driverId = String(driver.playerId);
+    const cached = driverLapHistoryCache.get(driverId);
+
+    if (lapCount === 0 || cached?.loading || cached?.lapCount === lapCount) {
+        return;
+    }
+
+    driverLapHistoryCache.set(driverId, {
+        lapCount,
+        laps: cached?.laps || [],
+        loading: true
+    });
+    updateLapHistoryTooltip();
+
+    try {
+        const response = await window.signalRConnection?.invoke("GetDriverLapHistory", Number(driver.playerId));
+        driverLapHistoryCache.set(driverId, {
+            lapCount,
+            laps: Array.isArray(response?.laps) ? response.laps : [],
+            loading: false
+        });
+    } catch (error) {
+        console.warn(`Failed to load lap history for player ${driver.playerId}: ${error?.message || error}`);
+        driverLapHistoryCache.set(driverId, {
+            lapCount,
+            laps: cached?.laps || [],
+            loading: false
+        });
+    }
+
+    updateLapHistoryTooltip();
 }
 
 // ── SignalR Loading & Connection ───────────────────────────
@@ -96,9 +388,21 @@ function initializeConnection() {
     });
 
     connection.on("ReceiveSessionUpdate", (data) => {
+        syncLapHistoryCache(data);
+        latestSessionData = data;
         updateSessionInfo(data);
         updateDriversTable(data);
         updateBestLaps(data);
+        syncLapHistoryHoverState();
+
+        if (visibleLapHistoryDriverId) {
+            const driver = getDriverById(visibleLapHistoryDriverId);
+            if (driver) {
+                ensureDriverLapHistory(driver);
+            }
+        }
+
+        updateLapHistoryTooltip();
     });
 
     connection.start()
@@ -305,9 +609,6 @@ function updateDriversTable(data) {
         return;
     }
 
-    const renderKey = data.players.map(p => p.playerId).join(',');
-    lastRenderState = renderKey;
-
     let html = "";
     data.players.forEach((driver, index) => {
         const position = index + 1;
@@ -328,6 +629,7 @@ function updateDriversTable(data) {
         );
         const bestLapDelta = formatLapDelta(driver.personalBestLapMs, data.sessionBestLapMs);
         const lastLapDelta = formatLapDelta(driver.lastLapTimeMs, driver.personalBestLapMs, ' (PB)');
+        const isLapHistoryActive = String(driver.playerId) === visibleLapHistoryDriverId;
 
         const getDisplayedSectorTime = (sectorNum) => {
             const currentSectorTime = driver.currentSectorProgress ? driver.currentSectorProgress[sectorNum] : 0;
@@ -370,7 +672,7 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-4 py-3">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
-                    <div class="lap-time-cell">
+                    <div class="lap-time-cell lap-history-trigger${isLapHistoryActive ? ' is-active' : ''}" data-last-lap-driver-id="${driver.playerId}">
                         <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
                         ${lastLapDelta ? `<span class="lap-time-delta">${lastLapDelta}</span>` : ""}
                     </div>
@@ -413,6 +715,8 @@ function updateDriversTable(data) {
             nameCell.innerHTML = driver.nameHtml || driver.name;
         }
     });
+
+    refreshLapHistoryTriggerStyles();
 }
 
 // ── Best Laps Update ──────────────────────────────────────
