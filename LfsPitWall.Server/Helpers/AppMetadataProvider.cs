@@ -8,7 +8,10 @@ public sealed record AppMetadata(
     string RepositoryUrl,
     string DiscordUrl,
     string Author,
-    bool IsOpenSource);
+    bool IsOpenSource,
+    string ProjectType,
+    string DataSourceName,
+    string DataSourceUrl);
 
 public static class AppMetadataProvider
 {
@@ -17,6 +20,9 @@ public static class AppMetadataProvider
     private const string DefaultVersion = "0.1";
     private const string DefaultAppName = "LFS Pit Wall";
     private const string DefaultAuthor = "Kamileon";
+    private const string DefaultProjectType = "ASP.NET Core web app with an HTML/JavaScript frontend";
+    private const string DefaultDataSourceName = "Live for Speed";
+    private const string DefaultDataSourceUrl = "https://www.lfs.net";
 
     public static AppMetadata Get()
     {
@@ -34,7 +40,10 @@ public static class AppMetadataProvider
             RepositoryUrl: GetAssemblyMetadataValue(assembly, "RepositoryUrl") ?? DefaultRepositoryUrl,
             DiscordUrl: DefaultDiscordUrl,
             Author: DefaultAuthor,
-            IsOpenSource: true);
+                IsOpenSource: true,
+                ProjectType: DefaultProjectType,
+                DataSourceName: DefaultDataSourceName,
+                DataSourceUrl: DefaultDataSourceUrl);
     }
 
     private static string? GetAssemblyMetadataValue(Assembly assembly, string key)

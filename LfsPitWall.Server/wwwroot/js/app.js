@@ -56,6 +56,8 @@ function startLocalDateTimeClock() {
 
 async function loadAppMetadata() {
     const versionElement = document.getElementById("app-version");
+    const projectTypeElement = document.getElementById("app-project-type");
+    const dataSourceLinkElement = document.getElementById("app-data-source-link");
     if (!versionElement) {
         return;
     }
@@ -69,6 +71,15 @@ async function loadAppMetadata() {
         const metadata = await response.json();
         if (metadata?.version) {
             versionElement.textContent = metadata.version;
+        }
+        if (projectTypeElement && metadata?.projectType) {
+            projectTypeElement.textContent = `${metadata.projectType}.`;
+        }
+        if (dataSourceLinkElement && metadata?.dataSourceName) {
+            dataSourceLinkElement.textContent = metadata.dataSourceName;
+        }
+        if (dataSourceLinkElement && metadata?.dataSourceUrl) {
+            dataSourceLinkElement.href = metadata.dataSourceUrl;
         }
     } catch (error) {
         debugLog(`App metadata fallback: ${error?.message || error}`, 'warn');

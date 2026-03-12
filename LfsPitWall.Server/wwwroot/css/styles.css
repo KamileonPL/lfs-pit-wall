@@ -56,6 +56,10 @@ body {
     line-height: 1.6;
 }
 
+.app-footer-meta {
+    margin-top: 6px;
+}
+
 .app-footer-link {
     color: #cbd5e1;
     text-decoration: none;
