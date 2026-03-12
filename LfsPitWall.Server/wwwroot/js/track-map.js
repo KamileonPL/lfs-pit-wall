@@ -851,7 +851,7 @@ window.TrackMapController = (() => {
         }
 
         const viewBounds = getSmoothedTrackBounds(rawViewBounds);
-        if (!viewBounds || trackGeometry.segments.length === 0 || drivers.length === 0) {
+        if (!viewBounds || trackGeometry.segments.length === 0) {
             emptyState.style.display = "flex";
             return;
         }

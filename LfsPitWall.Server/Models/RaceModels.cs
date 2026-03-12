@@ -87,23 +87,12 @@ public class TrackMapNodeSample
         var medianX = orderedX[orderedX.Count / 2];
         var medianY = orderedY[orderedY.Count / 2];
 
-        var representativeSample = _samples
-            .OrderBy(sample => GetSquaredDistance(sample.X, sample.Y, medianX, medianY))
-            .First();
-
         return new TrackMapPoint
         {
             Node = Node,
-            X = representativeSample.X,
-            Y = representativeSample.Y
+            X = medianX,
+            Y = medianY
         };
-    }
-
-    private static long GetSquaredDistance(int x1, int y1, int x2, int y2)
-    {
-        var deltaX = (long)x1 - x2;
-        var deltaY = (long)y1 - y2;
-        return (deltaX * deltaX) + (deltaY * deltaY);
     }
 
     private readonly record struct TrackMapRawSample(int X, int Y);
@@ -504,7 +493,6 @@ public class Driver
     public bool ShouldContributeToTrackMap()
     {
         return HasWorldPosition
-            && CurrentRacePosition > 0
             && !IsInPitLane
             && !IsPitStopActive;
     }
