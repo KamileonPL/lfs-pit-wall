@@ -14,6 +14,7 @@ public static class SessionDataBuilder
         var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
         var sessionBestLap = session.SessionBestLap;
         var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
+        var trackMap = session.GetTrackMapSnapshot();
         var orderedDrivers = session.GetDriversForStandings().ToList();
         var chatMessages = session.GetChatMessages();
         var estimatedRemainingTimeMs = session.GetEstimatedRemainingTimeMs();
@@ -37,6 +38,19 @@ public static class SessionDataBuilder
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
             activeSectorCount = session.ActiveSectorCount,
+            trackMap = new
+            {
+                minX = trackMap.MinX,
+                maxX = trackMap.MaxX,
+                minY = trackMap.MinY,
+                maxY = trackMap.MaxY,
+                points = trackMap.Points.Select(point => new
+                {
+                    node = point.Node,
+                    x = point.X,
+                    y = point.Y
+                }).ToList()
+            },
             chatRevision = session.ChatRevision,
             chatMessages = chatMessages.Select(message => new
             {
@@ -62,6 +76,7 @@ public static class SessionDataBuilder
                         : $"{d.NameHtml} <span style=\"color:#AAAAAA\">({System.Net.WebUtility.HtmlEncode(d.Username)})</span>",
                     carName = d.CarName,
                     driverColor = d.DriverColor,
+                    currentRacePosition = d.CurrentRacePosition,
                     lapsCompleted = d.LapsCompleted,
                     personalBestLapMs = personalBestLap?.LapTimeMs ?? 0,
                     lastLapNumber = currentLap?.LapNumber ?? 0,
@@ -70,6 +85,10 @@ public static class SessionDataBuilder
                     gapToPreviousMs,
                     personalBestSectors = d.PersonalBestSectors,
                     tyreTypes = d.TyreTypes.Select(t => (int)t).ToArray(),
+                    hasWorldPosition = d.HasWorldPosition,
+                    mapX = d.HasWorldPosition ? d.WorldX : (int?)null,
+                    mapY = d.HasWorldPosition ? d.WorldY : (int?)null,
+                    heading = d.HasWorldPosition ? d.CurrentHeading : (ushort?)null,
                     pitStops = d.PitStops,
                     pitStatus = d.GetPitStatus(),
                     pitLaneTimeMs = d.GetDisplayedPitLaneTimeMs(snapshotTimeUtc),

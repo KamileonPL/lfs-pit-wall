@@ -360,10 +360,8 @@ public class InSimService : BackgroundService
                 continue;
             }
 
-            driver.CurrentTrackNode = car.Node;
-            driver.CurrentTrackLap = car.Lap;
-            driver.CurrentRacePosition = car.Position;
-            driver.UpdateTopSpeed(car.Speed);
+            driver.UpdateLiveTelemetry(car.Node, car.Lap, car.Position, car.X, car.Y, car.Heading, car.Speed);
+            _raceSession.UpdateTrackMapNode(car.Node, car.X, car.Y);
         }
     }
 
@@ -374,6 +372,11 @@ public class InSimService : BackgroundService
     {
         // Extract track name (6 chars)
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
+        if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, trackName, StringComparison.OrdinalIgnoreCase))
+        {
+            _raceSession.ClearTrackMap();
+        }
+
         if (!string.IsNullOrEmpty(trackName))
             _raceSession.TrackName = trackName;
         else
@@ -670,6 +673,7 @@ public class InSimService : BackgroundService
     private void HandleRaceStart(IS_RST packet)
     {
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
+        _raceSession.ClearTrackMap();
         _raceSession.TrackName = string.IsNullOrEmpty(trackName) ? "Unknown" : trackName;
         _raceSession.WeatherType = packet.Weather;
         _raceSession.WindType = packet.Wind;

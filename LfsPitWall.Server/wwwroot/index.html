@@ -110,10 +110,14 @@
 
             <!-- Live Timing Table -->
             <div class="timing-table rounded-lg overflow-hidden border border-gray-700 mb-6">
-                <div class="header-bar px-4 py-3">
+                <div class="header-bar px-4 py-3 timing-header">
                     <h2 class="text-lg font-bold">🏁 Live Standings</h2>
+                    <div class="standings-view-toggle" role="tablist" aria-label="Standings view toggle">
+                        <button type="button" class="standings-view-button is-active" id="standings-view-table" data-standings-view="table" aria-pressed="true">Table</button>
+                        <button type="button" class="standings-view-button" id="standings-view-map" data-standings-view="map" aria-pressed="false">Map</button>
+                    </div>
                 </div>
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto" id="standings-table-view">
                     <table class="w-full">
                         <thead class="border-b border-gray-700">
                             <tr class="text-left text-sm text-gray-400">
@@ -138,6 +142,32 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+                <div class="standings-map-view" id="standings-map-view" hidden>
+                    <div class="standings-map-layout">
+                        <div class="standings-map-stage">
+                            <div class="standings-map-toolbar">
+                                <div>
+                                    <p class="text-gray-400 text-sm">🗺️ Live Track Map</p>
+                                    <p class="text-xs text-gray-500" id="track-map-hint">Building a lightweight track outline from live MCI telemetry.</p>
+                                </div>
+                                <span class="chat-status-chip" id="track-map-status">Waiting for telemetry</span>
+                            </div>
+                            <div class="track-map-shell track-map-shell--main">
+                                <canvas id="track-map-canvas" class="track-map-canvas" aria-label="Live track map"></canvas>
+                                <div class="track-map-empty" id="track-map-empty">Waiting for enough live position data to sketch the track...</div>
+                            </div>
+                        </div>
+                        <aside class="track-map-legend-panel" aria-label="Track map legend">
+                            <div class="track-map-legend-header">
+                                <p class="text-gray-400 text-sm">Driver Legend</p>
+                                <p class="text-xs text-gray-500">Same order as live standings, color-linked to the map.</p>
+                            </div>
+                            <div class="track-map-legend" id="track-map-legend">
+                                <div class="track-map-legend-empty">Waiting for drivers...</div>
+                            </div>
+                        </aside>
+                    </div>
                 </div>
             </div>
 
@@ -188,6 +218,7 @@
         </div>
     </div>
 
+    <script src="js/track-map.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

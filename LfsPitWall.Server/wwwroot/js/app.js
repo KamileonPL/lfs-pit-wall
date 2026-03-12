@@ -22,6 +22,7 @@ let sessionClockSyncedAtMs = 0;
 let sessionClockLastServerMs = 0;
 let sessionClockRunning = false;
 let lastRenderedChatRevision = null;
+let standingsViewMode = "table";
 const driverLapHistoryCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
@@ -278,14 +279,14 @@ function initializeTableHoverState() {
         lastPointerClientY = event.clientY;
 
         const row = event.target.closest("tr[data-driver-id]");
-        hoveredDriverId = row?.dataset.driverId || null;
+        setHoveredDriverId(row?.dataset.driverId || null);
 
         const trigger = getLapHistoryTrigger(event.target);
         setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
     });
 
     tableBody.addEventListener("mouseleave", () => {
-        hoveredDriverId = null;
+        setHoveredDriverId(null);
         setLapHistoryHoverTarget(null);
     });
 
@@ -303,6 +304,70 @@ function initializeTableHoverState() {
 
 function getDriverById(playerId) {
     return latestSessionData?.players?.find(driver => String(driver.playerId) === String(playerId)) || null;
+}
+
+function refreshDriverHoverState() {
+    document.querySelectorAll("#drivers-table tr[data-driver-id]").forEach((row) => {
+        row.classList.toggle("is-hovered", row.dataset.driverId === hoveredDriverId);
+    });
+
+    window.TrackMapController?.setHoveredDriverId(hoveredDriverId);
+}
+
+function setHoveredDriverId(driverId) {
+    const nextDriverId = driverId ? String(driverId) : null;
+    if (hoveredDriverId === nextDriverId) {
+        return;
+    }
+
+    hoveredDriverId = nextDriverId;
+    refreshDriverHoverState();
+}
+
+function setStandingsViewMode(mode) {
+    standingsViewMode = mode === "map" ? "map" : "table";
+
+    const tableView = document.getElementById("standings-table-view");
+    const mapView = document.getElementById("standings-map-view");
+    const tableButton = document.getElementById("standings-view-table");
+    const mapButton = document.getElementById("standings-view-map");
+
+    if (tableView) {
+        tableView.hidden = standingsViewMode !== "table";
+    }
+
+    if (mapView) {
+        mapView.hidden = standingsViewMode !== "map";
+    }
+
+    if (tableButton) {
+        tableButton.classList.toggle("is-active", standingsViewMode === "table");
+        tableButton.setAttribute("aria-pressed", standingsViewMode === "table" ? "true" : "false");
+    }
+
+    if (mapButton) {
+        mapButton.classList.toggle("is-active", standingsViewMode === "map");
+        mapButton.setAttribute("aria-pressed", standingsViewMode === "map" ? "true" : "false");
+    }
+
+    if (standingsViewMode === "map" && latestSessionData) {
+        window.TrackMapController?.render(latestSessionData, performance.now());
+    }
+}
+
+function initializeStandingsViewToggle() {
+    document.querySelectorAll("[data-standings-view]").forEach((button) => {
+        if (button.dataset.standingsViewBound === "true") {
+            return;
+        }
+
+        button.dataset.standingsViewBound = "true";
+        button.addEventListener("click", () => {
+            setStandingsViewMode(button.dataset.standingsView || "table");
+        });
+    });
+
+    setStandingsViewMode(standingsViewMode);
 }
 
 function syncLapHistoryCache(data) {
@@ -584,6 +649,7 @@ function initializeConnection() {
         latestSessionData = data;
         syncSessionClock(data);
         updateSessionInfo(data);
+        window.TrackMapController?.handleSessionUpdate(data);
         renderChatMessages(data);
         updateDriversTable(data);
         updateBestLaps(data);
@@ -906,7 +972,7 @@ function updateDriversTable(data) {
     const playerIds = new Set((data.players || []).map(player => String(player.playerId)));
 
     if (hoveredDriverId && !playerIds.has(hoveredDriverId)) {
-        hoveredDriverId = null;
+        setHoveredDriverId(null);
     }
 
     if (!data.players || data.players.length === 0) {
@@ -1026,6 +1092,7 @@ function updateDriversTable(data) {
         }
     });
 
+    refreshDriverHoverState();
     refreshLapHistoryTriggerStyles();
 }
 
@@ -1134,8 +1201,14 @@ console.warn = function (...args) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initializeTableHoverState();
+    initializeStandingsViewToggle();
     startLocalDateTimeClock();
     loadAppMetadata();
+    window.TrackMapController?.initialize({
+        getLatestSessionData: () => latestSessionData,
+        getHoveredDriverId: () => hoveredDriverId,
+        setHoveredDriverId: (driverId) => setHoveredDriverId(driverId)
+    });
 
     loadSignalRScript()
         .then(() => {

@@ -53,6 +53,56 @@ public class TimingPointSnapshot
 }
 
 /// <summary>
+/// Represents an averaged world-space point for a track node.
+/// </summary>
+public class TrackMapNodeSample
+{
+    public ushort Node { get; set; }
+    public double AverageX { get; private set; }
+    public double AverageY { get; private set; }
+    public uint SampleCount { get; private set; }
+
+    public void AddSample(int x, int y)
+    {
+        SampleCount++;
+        AverageX += (x - AverageX) / SampleCount;
+        AverageY += (y - AverageY) / SampleCount;
+    }
+
+    public TrackMapPoint ToPoint()
+    {
+        return new TrackMapPoint
+        {
+            Node = Node,
+            X = (int)Math.Round(AverageX),
+            Y = (int)Math.Round(AverageY)
+        };
+    }
+}
+
+/// <summary>
+/// Represents a sampled point on the approximated live track map.
+/// </summary>
+public class TrackMapPoint
+{
+    public ushort Node { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+}
+
+/// <summary>
+/// Snapshot of the currently observed track map.
+/// </summary>
+public class TrackMapSnapshot
+{
+    public List<TrackMapPoint> Points { get; set; } = new();
+    public int MinX { get; set; }
+    public int MaxX { get; set; }
+    public int MinY { get; set; }
+    public int MaxY { get; set; }
+}
+
+/// <summary>
 /// Represents a single lap's complete timing data (lap-centric architecture)
 /// </summary>
 public class LapData
@@ -237,6 +287,26 @@ public class Driver
     public ushort CurrentTrackLap { get; set; }
 
     /// <summary>
+    /// Whether the driver currently has a valid world-space position from MCI.
+    /// </summary>
+    public bool HasWorldPosition { get; private set; }
+
+    /// <summary>
+    /// Driver world-space X coordinate from MCI.
+    /// </summary>
+    public int WorldX { get; private set; }
+
+    /// <summary>
+    /// Driver world-space Y coordinate from MCI.
+    /// </summary>
+    public int WorldY { get; private set; }
+
+    /// <summary>
+    /// Driver heading from MCI.
+    /// </summary>
+    public ushort CurrentHeading { get; private set; }
+
+    /// <summary>
     /// Driver's highest speed reached in the current session, in km/h.
     /// </summary>
     public double TopSpeedKmh { get; private set; }
@@ -366,6 +436,18 @@ public class Driver
         {
             TopSpeedKmh = speedKmh;
         }
+    }
+
+    public void UpdateLiveTelemetry(ushort trackNode, ushort trackLap, byte racePosition, int worldX, int worldY, ushort heading, ushort rawSpeed)
+    {
+        CurrentTrackNode = trackNode;
+        CurrentTrackLap = trackLap;
+        CurrentRacePosition = racePosition;
+        HasWorldPosition = true;
+        WorldX = worldX;
+        WorldY = worldY;
+        CurrentHeading = heading;
+        UpdateTopSpeed(rawSpeed);
     }
 
     public void UpdatePitStops(uint pitStops)
@@ -545,6 +627,7 @@ public class RaceSession
     private readonly object _playersLock = new object(); // Thread-safe access
     private readonly Dictionary<byte, string> _usernames = new(); // UCID -> UName mapping
     private readonly List<ChatMessageEntry> _chatMessages = new();
+    private readonly Dictionary<ushort, TrackMapNodeSample> _trackMapNodes = new();
     private const int MaxChatMessages = 80;
 
     /// <summary>
@@ -869,6 +952,53 @@ public class RaceSession
         }
     }
 
+    public void UpdateTrackMapNode(ushort node, int x, int y)
+    {
+        lock (_playersLock)
+        {
+            if (!_trackMapNodes.TryGetValue(node, out var sample))
+            {
+                sample = new TrackMapNodeSample { Node = node };
+                _trackMapNodes[node] = sample;
+            }
+
+            sample.AddSample(x, y);
+        }
+    }
+
+    public TrackMapSnapshot GetTrackMapSnapshot()
+    {
+        lock (_playersLock)
+        {
+            var points = _trackMapNodes.Values
+                .OrderBy(sample => sample.Node)
+                .Select(sample => sample.ToPoint())
+                .ToList();
+
+            if (points.Count == 0)
+            {
+                return new TrackMapSnapshot();
+            }
+
+            return new TrackMapSnapshot
+            {
+                Points = points,
+                MinX = points.Min(point => point.X),
+                MaxX = points.Max(point => point.X),
+                MinY = points.Min(point => point.Y),
+                MaxY = points.Max(point => point.Y)
+            };
+        }
+    }
+
+    public void ClearTrackMap()
+    {
+        lock (_playersLock)
+        {
+            _trackMapNodes.Clear();
+        }
+    }
+
     /// <summary>
     /// Resets the entire session
     /// </summary>
@@ -893,6 +1023,7 @@ public class RaceSession
             SessionBestLapAuthorUsername = string.Empty;
             ChatRevision = 0;
             _chatMessages.Clear();
+            _trackMapNodes.Clear();
             Players.Clear();
         }
     }

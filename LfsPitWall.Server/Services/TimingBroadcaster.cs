@@ -2,6 +2,7 @@ using LfsPitWall.Server.Helpers;
 using LfsPitWall.Server.Hubs;
 using LfsPitWall.Server.Models;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 
 namespace LfsPitWall.Server.Services;
 
@@ -14,24 +15,25 @@ public class TimingBroadcaster : BackgroundService
     private readonly IHubContext<TimingHub> _hubContext;
     private readonly RaceSession _raceSession;
     private readonly ILogger<TimingBroadcaster> _logger;
-
-    private const int BroadcastIntervalMs = 200;
+    private readonly int _broadcastIntervalMs;
 
     public TimingBroadcaster(
         IHubContext<TimingHub> hubContext,
         RaceSession raceSession,
-        ILogger<TimingBroadcaster> logger)
+        ILogger<TimingBroadcaster> logger,
+        IOptions<TelemetryOptions> telemetryOptions)
     {
         _hubContext = hubContext;
         _raceSession = raceSession;
         _logger = logger;
+        _broadcastIntervalMs = telemetryOptions.Value.GetClampedBroadcastIntervalMs();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Timing broadcaster started");
+        _logger.LogInformation("Timing broadcaster started with {BroadcastIntervalMs} ms interval", _broadcastIntervalMs);
 
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(BroadcastIntervalMs));
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(_broadcastIntervalMs));
 
         try
         {

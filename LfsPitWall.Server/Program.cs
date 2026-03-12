@@ -23,6 +23,10 @@ builder.Services.AddCors(options =>
 // Add SignalR
 builder.Services.AddSignalR();
 
+builder.Services
+    .AddOptions<TelemetryOptions>()
+    .Bind(builder.Configuration.GetSection(TelemetryOptions.SectionName));
+
 // Add InSim service
 builder.Services.AddHostedService<InSimService>();
 
