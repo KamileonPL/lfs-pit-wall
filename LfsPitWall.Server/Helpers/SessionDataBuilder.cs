@@ -42,6 +42,7 @@ public static class SessionDataBuilder
             activeSectorCount = session.ActiveSectorCount,
             trackMap = new
             {
+                revision = trackMap.Revision,
                 minX = trackMap.MinX,
                 maxX = trackMap.MaxX,
                 minY = trackMap.MinY,

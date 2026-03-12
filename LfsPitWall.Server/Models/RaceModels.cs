@@ -124,6 +124,7 @@ public class TrackMapPoint
 /// </summary>
 public class TrackMapSnapshot
 {
+    public uint Revision { get; set; }
     public List<TrackMapPoint> Points { get; set; } = new();
     public int MinX { get; set; }
     public int MaxX { get; set; }
@@ -687,6 +688,7 @@ public class RaceSession
     private readonly Dictionary<byte, string> _usernames = new(); // UCID -> UName mapping
     private readonly List<ChatMessageEntry> _chatMessages = new();
     private readonly Dictionary<ushort, TrackMapNodeSample> _trackMapNodes = new();
+    private uint _trackMapRevision;
     private const int MaxChatMessages = 80;
 
     /// <summary>
@@ -1041,6 +1043,7 @@ public class RaceSession
             }
 
             sample.AddSample(x, y);
+            _trackMapRevision++;
         }
     }
 
@@ -1055,11 +1058,15 @@ public class RaceSession
 
             if (points.Count == 0)
             {
-                return new TrackMapSnapshot();
+                return new TrackMapSnapshot
+                {
+                    Revision = _trackMapRevision
+                };
             }
 
             return new TrackMapSnapshot
             {
+                Revision = _trackMapRevision,
                 Points = points,
                 MinX = points.Min(point => point.X),
                 MaxX = points.Max(point => point.X),
@@ -1074,6 +1081,7 @@ public class RaceSession
         lock (_playersLock)
         {
             _trackMapNodes.Clear();
+            _trackMapRevision++;
         }
     }
 
@@ -1102,6 +1110,7 @@ public class RaceSession
             ChatRevision = 0;
             _chatMessages.Clear();
             _trackMapNodes.Clear();
+            _trackMapRevision = 0;
             Players.Clear();
         }
     }

@@ -393,9 +393,7 @@ function setStandingsViewMode(mode) {
         mapButton.setAttribute("aria-pressed", standingsViewMode === "map" ? "true" : "false");
     }
 
-    if (standingsViewMode === "map" && latestSessionData) {
-        window.TrackMapController?.render(latestSessionData, performance.now());
-    }
+    window.TrackMapController?.setViewActive(standingsViewMode === "map");
 }
 
 function initializeStandingsViewToggle() {

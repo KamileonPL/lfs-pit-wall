@@ -1,4 +1,5 @@
 window.TrackMapController = (() => {
+    let trackMapElements = null;
     let trackMapResizeBound = false;
     let trackMapInteractionBound = false;
     let trackMapLegendSizingBound = false;
@@ -13,6 +14,8 @@ window.TrackMapController = (() => {
     let getSelectedDriverIds = () => new Set();
     let toggleSelectedDriverId = () => {};
     let lastRenderedDriverMarkers = [];
+    let cachedTrackGeometryRevision = null;
+    let cachedTrackGeometry = { segments: [], boundsPoints: [], rawPointCount: 0 };
     const trackMapMotionState = new Map();
 
     const TRACK_MAP_DEFAULT_SNAPSHOT_MS = 200;
@@ -27,6 +30,40 @@ window.TrackMapController = (() => {
     const TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD = 1600;
     const TRACK_MAP_MAX_SEGMENT_POINT_DISTANCE_WORLD = 12000;
     const TRACK_MAP_LINE_SMOOTHING_PASSES = 2;
+
+    function getTrackMapElements() {
+        if (trackMapElements?.canvas instanceof HTMLCanvasElement) {
+            return trackMapElements;
+        }
+
+        trackMapElements = {
+            canvas: document.getElementById("track-map-canvas"),
+            emptyState: document.getElementById("track-map-empty"),
+            status: document.getElementById("track-map-status"),
+            progress: document.getElementById("track-map-progress"),
+            trackName: document.getElementById("track-map-track-name"),
+            legend: document.getElementById("track-map-legend"),
+            mapShell: document.querySelector(".track-map-shell--main"),
+            legendPanel: document.querySelector(".track-map-legend-panel"),
+            mapView: document.getElementById("standings-map-view")
+        };
+
+        return trackMapElements;
+    }
+
+    function isTrackMapVisible() {
+        const elements = getTrackMapElements();
+        return elements.mapView instanceof HTMLElement && !elements.mapView.hidden;
+    }
+
+    function stopTrackMapAnimation() {
+        if (trackMapAnimationFrameId === null) {
+            return;
+        }
+
+        window.cancelAnimationFrame(trackMapAnimationFrameId);
+        trackMapAnimationFrameId = null;
+    }
 
     function initialize(options = {}) {
         if (typeof options.getLatestSessionData === "function") {
@@ -49,6 +86,8 @@ window.TrackMapController = (() => {
             toggleSelectedDriverId = options.toggleSelectedDriverId;
         }
 
+        getTrackMapElements();
+
         bindTrackMapInteractions();
         bindTrackMapLegendSizing();
 
@@ -69,6 +108,10 @@ window.TrackMapController = (() => {
 
     function handleSessionUpdate(data) {
         syncTrackMapMotion(data);
+        if (!isTrackMapVisible()) {
+            return;
+        }
+
         renderTrackMapLegend(data);
     }
 
@@ -89,7 +132,7 @@ window.TrackMapController = (() => {
             return;
         }
 
-        const canvas = document.getElementById("track-map-canvas");
+        const { canvas, legend } = getTrackMapElements();
         if (canvas) {
             canvas.addEventListener("mousemove", (event) => {
                 const rect = canvas.getBoundingClientRect();
@@ -120,7 +163,6 @@ window.TrackMapController = (() => {
             });
         }
 
-        const legend = document.getElementById("track-map-legend");
         if (legend) {
             legend.addEventListener("mousemove", (event) => {
                 const entry = getDriverEntryFromEventTarget(event.target);
@@ -144,8 +186,7 @@ window.TrackMapController = (() => {
     }
 
     function syncTrackMapLegendPanelHeight() {
-        const mapShell = document.querySelector(".track-map-shell--main");
-        const panel = document.querySelector(".track-map-legend-panel");
+        const { mapShell, legendPanel: panel } = getTrackMapElements();
 
         if (!(mapShell instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
             return;
@@ -172,7 +213,7 @@ window.TrackMapController = (() => {
         syncTrackMapLegendPanelHeight();
 
         if (typeof ResizeObserver === "function") {
-            const mapShell = document.querySelector(".track-map-shell--main");
+            const { mapShell } = getTrackMapElements();
             if (mapShell instanceof HTMLElement) {
                 trackMapLegendResizeObserver = new ResizeObserver(() => {
                     syncTrackMapLegendPanelHeight();
@@ -186,8 +227,7 @@ window.TrackMapController = (() => {
     }
 
     function updateTrackMapOverlay(data) {
-        const progressElement = document.getElementById("track-map-progress");
-        const trackNameElement = document.getElementById("track-map-track-name");
+        const { progress: progressElement, trackName: trackNameElement } = getTrackMapElements();
 
         if (!(progressElement instanceof HTMLElement) || !(trackNameElement instanceof HTMLElement)) {
             return;
@@ -355,18 +395,20 @@ window.TrackMapController = (() => {
             }
         });
 
-        ensureTrackMapAnimation();
+        if (isTrackMapVisible()) {
+            ensureTrackMapAnimation();
+        }
     }
 
     function ensureTrackMapAnimation() {
-        if (trackMapAnimationFrameId !== null) {
+        if (trackMapAnimationFrameId !== null || !isTrackMapVisible()) {
             return;
         }
 
         const tick = () => {
             trackMapAnimationFrameId = null;
             const latestSessionData = getLatestSessionData();
-            if (!latestSessionData) {
+            if (!latestSessionData || !isTrackMapVisible()) {
                 return;
             }
 
@@ -375,6 +417,18 @@ window.TrackMapController = (() => {
         };
 
         trackMapAnimationFrameId = window.requestAnimationFrame(tick);
+    }
+
+    function getTrackGeometry(trackMap) {
+        const revision = Number(trackMap?.revision ?? -1);
+        if (revision === cachedTrackGeometryRevision) {
+            return cachedTrackGeometry;
+        }
+
+        const trackPoints = Array.isArray(trackMap?.points) ? trackMap.points : [];
+        cachedTrackGeometry = buildTrackMapGeometry(trackPoints);
+        cachedTrackGeometryRevision = revision;
+        return cachedTrackGeometry;
     }
 
     function getTrackMapRenderableDrivers(data) {
@@ -710,7 +764,7 @@ window.TrackMapController = (() => {
     }
 
     function refreshTrackMapLegendInteractionState() {
-        const legend = document.getElementById("track-map-legend");
+        const { legend } = getTrackMapElements();
         if (!legend) {
             return;
         }
@@ -726,7 +780,7 @@ window.TrackMapController = (() => {
     }
 
     function renderTrackMapLegend(data) {
-        const legend = document.getElementById("track-map-legend");
+        const { legend } = getTrackMapElements();
         if (!legend) {
             return;
         }
@@ -765,9 +819,7 @@ window.TrackMapController = (() => {
     }
 
     function renderTrackMap(data, nowMs = performance.now()) {
-        const canvas = document.getElementById("track-map-canvas");
-        const emptyState = document.getElementById("track-map-empty");
-        const statusElement = document.getElementById("track-map-status");
+        const { canvas, emptyState, status: statusElement } = getTrackMapElements();
         if (!canvas || !emptyState || !statusElement) {
             return;
         }
@@ -778,8 +830,7 @@ window.TrackMapController = (() => {
         }
 
         const trackMap = data?.trackMap || null;
-        const trackPoints = Array.isArray(trackMap?.points) ? trackMap.points : [];
-        const trackGeometry = buildTrackMapGeometry(trackPoints);
+    const trackGeometry = getTrackGeometry(trackMap);
         const drivers = getAnimatedTrackDrivers(data, nowMs);
         const hoveredDriverId = getHoveredDriverId();
         const selectedDriverIds = getSelectedDriverIds();
@@ -944,17 +995,31 @@ window.TrackMapController = (() => {
         initialize,
         handleSessionUpdate,
         render: renderTrackMap,
+        setViewActive(isVisible) {
+            if (!isVisible) {
+                stopTrackMapAnimation();
+                return;
+            }
+
+            const latestSessionData = getLatestSessionData();
+            if (latestSessionData) {
+                renderTrackMapLegend(latestSessionData);
+                renderTrackMap(latestSessionData, performance.now());
+            }
+
+            ensureTrackMapAnimation();
+        },
         setHoveredDriverId(driverId) {
             refreshTrackMapLegendInteractionState();
             const latestSessionData = getLatestSessionData();
-            if (latestSessionData) {
+            if (latestSessionData && isTrackMapVisible()) {
                 renderTrackMap(latestSessionData, performance.now());
             }
         },
         refreshSelection() {
             refreshTrackMapLegendInteractionState();
             const latestSessionData = getLatestSessionData();
-            if (latestSessionData) {
+            if (latestSessionData && isTrackMapVisible()) {
                 renderTrackMap(latestSessionData, performance.now());
             }
         }
