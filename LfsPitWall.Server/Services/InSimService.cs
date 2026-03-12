@@ -10,6 +10,8 @@ namespace LfsPitWall.Server.Services;
 /// </summary>
 public class InSimService : BackgroundService
 {
+    private const uint QualifyingPlaceholderTimeMs = 3600000;
+
     private readonly ILogger<InSimService> _logger;
     private readonly RaceSession _raceSession;
     private readonly SessionLifecycleManager _sessionLifecycleManager;
@@ -525,6 +527,22 @@ public class InSimService : BackgroundService
             RecordedAt = DateTime.UtcNow
         };
 
+        if (ShouldIgnoreQualifyingPlaceholderLap(packet))
+        {
+            driver.LapsCompleted = packet.LapsDone;
+            driver.CurrentLapSectors.Clear();
+            driver.CurrentLapSplitTimes.Clear();
+
+            _logger.LogDebug(
+                "Ignoring qualifying placeholder lap for {PlayerName} | Lap {LapNumber} | LTime: {LapTime} | ETime: {ElapsedTime}",
+                LfsColorConverter.RemoveColorCodes(driver.Name),
+                packet.LapsDone,
+                packet.LTime,
+                packet.ETime);
+
+            return;
+        }
+
         driver.AddLap(lapData, _raceSession.ActiveSectorCount);
         driver.LapsCompleted = packet.LapsDone;
         driver.RecordTimingPoint(packet.LapsDone, _raceSession.ActiveSectorCount, packet.ETime);
@@ -569,6 +587,18 @@ public class InSimService : BackgroundService
     {
         var driver = _raceSession.GetDriver(packet.PLID) ?? GetOrCreatePlaceholderDriver(packet.PLID, "SPX");
 
+        if (ShouldIgnoreQualifyingPlaceholderSplit(packet))
+        {
+            _logger.LogDebug(
+                "Ignoring qualifying placeholder split for {PlayerName} | Split: {Split} | STime: {SplitTime} | ETime: {ElapsedTime}",
+                LfsColorConverter.RemoveColorCodes(driver.Name),
+                packet.Split,
+                packet.STime,
+                packet.ETime);
+
+            return;
+        }
+
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
         byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);
         driver.FuelPercent = fuelPercent;
@@ -582,12 +612,14 @@ public class InSimService : BackgroundService
             : packet.STime;
 
         _logger.LogDebug(
-            "🎯 Sector {Sector} | {PlayerName}: {SectorTime}ms (Split: {SplitTime}ms, Elapsed: {ElapsedTime}ms) | Fuel: {Fuel} | Stops: {Stops}",
+            "🎯 Sector {Sector} | {PlayerName}: {SectorTime}ms (Split: {SplitTime}ms, Elapsed: {ElapsedTime}ms) | Active sectors: {ActiveSectorCount} | SessionType: {SessionType} | Fuel: {Fuel} | Stops: {Stops}",
             packet.Split,
             LfsColorConverter.RemoveColorCodes(driver.Name),
             sectorTimeMs,
             packet.STime,
             packet.ETime,
+            _raceSession.ActiveSectorCount,
+            _raceSession.SessionType,
             driver.FuelPercent.HasValue ? $"{driver.FuelPercent}%" : "N/A",
             packet.NumStops);
     }
@@ -607,6 +639,20 @@ public class InSimService : BackgroundService
             LfsColorConverter.RemoveColorCodes(driver.Name),
             driver.PitStops,
             packet.FuelAdd == 255 ? "N/A" : $"{packet.FuelAdd}%");
+    }
+
+    private bool ShouldIgnoreQualifyingPlaceholderLap(IS_LAP packet)
+    {
+        return _raceSession.SessionType == 1
+            && packet.LTime == QualifyingPlaceholderTimeMs
+            && packet.ETime < QualifyingPlaceholderTimeMs;
+    }
+
+    private bool ShouldIgnoreQualifyingPlaceholderSplit(IS_SPX packet)
+    {
+        return _raceSession.SessionType == 1
+            && packet.STime == QualifyingPlaceholderTimeMs
+            && packet.ETime == QualifyingPlaceholderTimeMs;
     }
 
     private void HandlePitStopFinish(IS_PSF packet)
@@ -720,8 +766,8 @@ public class InSimService : BackgroundService
             packet.NumP,
             packet.Timing,
             checkpointCount,
-                _raceSession.ActiveSectorCount,
-                _raceSession.GetWindTypeString());
+            _raceSession.ActiveSectorCount,
+            _raceSession.GetWindTypeString());
 
         if (didResetSession)
         {
