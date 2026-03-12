@@ -55,13 +55,14 @@ public class InSimService : BackgroundService
         // Timing data
         _dispatcher.Bind<IS_LAP>(InSimPacketType.ISP_LAP, HandleLapTime);
         _dispatcher.Bind<IS_SPX>(InSimPacketType.ISP_SPX, HandleSectorTime);
+        _dispatcher.Bind<IS_PIT>(InSimPacketType.ISP_PIT, HandlePitStopStart);
+        _dispatcher.Bind<IS_PSF>(InSimPacketType.ISP_PSF, HandlePitStopFinish);
+        _dispatcher.Bind<IS_PLA>(InSimPacketType.ISP_PLA, HandlePitLaneChange);
         _dispatcher.BindRaw(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
 
         // Known packet types we don't need — suppress log noise
         _dispatcher.Suppress(
             InSimPacketType.ISP_FIN,
-            InSimPacketType.ISP_PIT,
-            InSimPacketType.ISP_PSF,
             InSimPacketType.ISP_PEN,
             InSimPacketType.ISP_CCH,
             InSimPacketType.ISP_UCO
@@ -497,6 +498,7 @@ public class InSimService : BackgroundService
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
         byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);
         driver.FuelPercent = fuelPercent;
+        driver.UpdatePitStops(packet.NumStops);
         
         // Update session elapsed time from the lap packet
         _raceSession.SessionTimeMs = packet.ETime;
@@ -559,6 +561,7 @@ public class InSimService : BackgroundService
         // Calculate fuel: if 255 it's disabled (server has /showfuel no), otherwise fuel_percent = Fuel200 / 2
         byte? fuelPercent = packet.Fuel200 == 255 ? null : (byte?)Math.Min(100, packet.Fuel200 / 2);
         driver.FuelPercent = fuelPercent;
+        driver.UpdatePitStops(packet.NumStops);
 
         // Update sector time from cumulative split time
         driver.UpdateSectorTime(packet.Split, packet.STime);
@@ -576,6 +579,49 @@ public class InSimService : BackgroundService
             packet.ETime,
             driver.FuelPercent.HasValue ? $"{driver.FuelPercent}%" : "N/A",
             packet.NumStops);
+    }
+
+    private void HandlePitStopStart(IS_PIT packet)
+    {
+        var driver = _raceSession.GetDriver(packet.PLID) ?? GetOrCreatePlaceholderDriver(packet.PLID, "PIT");
+
+        driver.LapsCompleted = packet.LapsDone;
+        driver.StartPitStop(
+            packet.NumStops,
+            packet.FuelAdd,
+            new[] { packet.Tyres0, packet.Tyres1, packet.Tyres2, packet.Tyres3 });
+
+        _logger.LogInformation(
+            "🛠️ PIT STOP START: {PlayerName} | Stops: {Stops} | Fuel add: {FuelAdd}",
+            LfsColorConverter.RemoveColorCodes(driver.Name),
+            driver.PitStops,
+            packet.FuelAdd == 255 ? "N/A" : $"{packet.FuelAdd}%");
+    }
+
+    private void HandlePitStopFinish(IS_PSF packet)
+    {
+        var driver = _raceSession.GetDriver(packet.PLID) ?? GetOrCreatePlaceholderDriver(packet.PLID, "PSF");
+        driver.FinishPitStop(packet.STime);
+
+        _logger.LogInformation(
+            "✅ PIT STOP FINISH: {PlayerName} | Stop time: {StopTime}ms",
+            LfsColorConverter.RemoveColorCodes(driver.Name),
+            packet.STime);
+    }
+
+    private void HandlePitLaneChange(IS_PLA packet)
+    {
+        var driver = _raceSession.GetDriver(packet.PLID) ?? GetOrCreatePlaceholderDriver(packet.PLID, "PLA");
+        var pitLaneFact = Enum.IsDefined(typeof(PitLaneFact), packet.Fact)
+            ? (PitLaneFact)packet.Fact
+            : PitLaneFact.Enter;
+
+        driver.UpdatePitLaneState(pitLaneFact, DateTime.UtcNow);
+
+        _logger.LogDebug(
+            "🧭 PIT LANE: {PlayerName} | {PitLaneFact}",
+            LfsColorConverter.RemoveColorCodes(driver.Name),
+            GetPitLaneFactLabel(pitLaneFact));
     }
 
     /// <summary>
@@ -669,4 +715,14 @@ public class InSimService : BackgroundService
         await CloseConnectionAsync();
         await base.StopAsync(cancellationToken);
     }
+
+    private static string GetPitLaneFactLabel(PitLaneFact fact) => fact switch
+    {
+        PitLaneFact.Exit => "exit",
+        PitLaneFact.Enter => "entry",
+        PitLaneFact.NoPurpose => "no purpose",
+        PitLaneFact.DriveThrough => "drive-through",
+        PitLaneFact.StopGo => "stop-go",
+        _ => "unknown"
+    };
 }

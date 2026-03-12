@@ -748,6 +748,42 @@ function renderTyreSummary(tyreTypes) {
         </div>`;
 }
 
+function getPitStatusMeta(pitStatus) {
+    switch (pitStatus) {
+        case "service":
+            return { label: "Service", className: "text-amber-300" };
+        case "lane":
+            return { label: "Pit lane", className: "text-sky-300" };
+        case "drive-through":
+            return { label: "Drive-through", className: "text-orange-300" };
+        case "stop-go":
+            return { label: "Stop-go", className: "text-rose-300" };
+        case "no-purpose":
+            return { label: "No purpose", className: "text-gray-400" };
+        default:
+            return null;
+    }
+}
+
+function renderPitSummary(driver) {
+    const pitStatusMeta = getPitStatusMeta(driver.pitStatus);
+    const pitStopCount = Number(driver.pitStops || 0);
+    const pitLaneTime = driver.pitLaneTimeMs ? formatTime(driver.pitLaneTimeMs) : "";
+    const statusLine = pitStatusMeta
+        ? `<span class="text-[11px] uppercase tracking-[0.18em] ${pitStatusMeta.className}">${pitStatusMeta.label}</span>`
+        : "";
+    const timeLine = pitLaneTime
+        ? `<span class="text-[11px] text-gray-500">${pitLaneTime}</span>`
+        : "";
+
+    return `
+        <div class="flex flex-col items-center leading-tight gap-1">
+            <span class="font-semibold text-gray-100">${pitStopCount}</span>
+            ${statusLine}
+            ${timeLine}
+        </div>`;
+}
+
 function formatSpeedKmh(speedKmh) {
     const numericSpeed = Number(speedKmh || 0);
     if (!numericSpeed) {
@@ -976,7 +1012,7 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3">
                     ${renderTyreSummary(driver.tyreTypes)}
                 </td>
-                <td class="px-4 py-3 text-center">${driver.pitStops}</td>
+                <td class="px-4 py-3 text-center">${renderPitSummary(driver)}</td>
             </tr>`;
     });
 

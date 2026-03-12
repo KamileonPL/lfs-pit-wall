@@ -10,6 +10,7 @@ public static class SessionDataBuilder
 {
     public static object Build(RaceSession session)
     {
+        var snapshotTimeUtc = DateTime.UtcNow;
         var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
         var sessionBestLap = session.SessionBestLap;
         var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
@@ -70,6 +71,9 @@ public static class SessionDataBuilder
                     personalBestSectors = d.PersonalBestSectors,
                     tyreTypes = d.TyreTypes.Select(t => (int)t).ToArray(),
                     pitStops = d.PitStops,
+                    pitStatus = d.GetPitStatus(),
+                    pitLaneTimeMs = d.GetDisplayedPitLaneTimeMs(snapshotTimeUtc),
+                    lastPitStopTimeMs = d.LastPitStopTimeMs,
                     currentSectorProgress = d.GetCurrentSectorProgress().ToDictionary(
                         kvp => kvp.Key,
                         kvp => kvp.Value.TimeMs

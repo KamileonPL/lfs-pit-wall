@@ -172,6 +172,46 @@ public class Driver
     public uint PitStops { get; set; }
 
     /// <summary>
+    /// Whether the driver is currently in the pit lane.
+    /// </summary>
+    public bool IsInPitLane { get; private set; }
+
+    /// <summary>
+    /// Whether the driver is currently stopped for pit work.
+    /// </summary>
+    public bool IsPitStopActive { get; private set; }
+
+    /// <summary>
+    /// Last pit lane fact reported by LFS.
+    /// </summary>
+    public PitLaneFact? LastPitLaneFact { get; private set; }
+
+    /// <summary>
+    /// Last completed pit stop duration in milliseconds.
+    /// </summary>
+    public uint? LastPitStopTimeMs { get; private set; }
+
+    /// <summary>
+    /// Timestamp when the driver most recently entered the pit lane.
+    /// </summary>
+    public DateTime? PitLaneEnteredAtUtc { get; private set; }
+
+    /// <summary>
+    /// Last completed total pit lane traversal duration in milliseconds.
+    /// </summary>
+    public uint? LastPitLaneTimeMs { get; private set; }
+
+    /// <summary>
+    /// Fuel added during the latest pit stop, if LFS reports it.
+    /// </summary>
+    public byte? LastPitStopFuelAddPercent { get; private set; }
+
+    /// <summary>
+    /// Tyres changed during the latest pit stop.
+    /// </summary>
+    public byte[] LastPitTyresChanged { get; private set; } = new byte[4];
+
+    /// <summary>
     /// Number of laps completed
     /// </summary>
     public uint LapsCompleted { get; set; }
@@ -326,6 +366,79 @@ public class Driver
         {
             TopSpeedKmh = speedKmh;
         }
+    }
+
+    public void UpdatePitStops(uint pitStops)
+    {
+        PitStops = pitStops;
+    }
+
+    public void UpdatePitLaneState(PitLaneFact fact, DateTime occurredAtUtc)
+    {
+        LastPitLaneFact = fact;
+
+        if (fact == PitLaneFact.Exit)
+        {
+            if (PitLaneEnteredAtUtc.HasValue && occurredAtUtc >= PitLaneEnteredAtUtc.Value)
+            {
+                LastPitLaneTimeMs = (uint)(occurredAtUtc - PitLaneEnteredAtUtc.Value).TotalMilliseconds;
+            }
+
+            PitLaneEnteredAtUtc = null;
+            IsInPitLane = false;
+            IsPitStopActive = false;
+            return;
+        }
+
+        if (!PitLaneEnteredAtUtc.HasValue)
+        {
+            PitLaneEnteredAtUtc = occurredAtUtc;
+        }
+
+        IsInPitLane = true;
+    }
+
+    public void StartPitStop(uint pitStops, byte fuelAdd, byte[] tyresChanged)
+    {
+        PitStops = pitStops;
+        IsInPitLane = true;
+        IsPitStopActive = true;
+        LastPitStopFuelAddPercent = fuelAdd == 255 ? null : fuelAdd;
+        LastPitTyresChanged = tyresChanged.ToArray();
+    }
+
+    public void FinishPitStop(uint stopTimeMs)
+    {
+        IsPitStopActive = false;
+        LastPitStopTimeMs = stopTimeMs;
+    }
+
+    public uint? GetDisplayedPitLaneTimeMs(DateTime nowUtc)
+    {
+        if (PitLaneEnteredAtUtc.HasValue && nowUtc >= PitLaneEnteredAtUtc.Value)
+        {
+            return (uint)(nowUtc - PitLaneEnteredAtUtc.Value).TotalMilliseconds;
+        }
+
+        return LastPitLaneTimeMs;
+    }
+
+    public string GetPitStatus()
+    {
+        if (IsPitStopActive)
+        {
+            return "service";
+        }
+
+        return LastPitLaneFact switch
+        {
+            PitLaneFact.Enter => "lane",
+            PitLaneFact.NoPurpose => "no-purpose",
+            PitLaneFact.DriveThrough => "drive-through",
+            PitLaneFact.StopGo => "stop-go",
+            PitLaneFact.Exit => "track",
+            _ => IsInPitLane ? "lane" : "track"
+        };
     }
 
     /// <summary>

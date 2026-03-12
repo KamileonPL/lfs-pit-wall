@@ -87,6 +87,15 @@ public enum MsoUserType : byte
     Local = 3,
 }
 
+public enum PitLaneFact : byte
+{
+    Exit = 0,
+    Enter = 1,
+    NoPurpose = 2,
+    DriveThrough = 3,
+    StopGo = 4,
+}
+
 /// <summary>
 /// TINY subtype enumeration
 /// </summary>
@@ -469,6 +478,66 @@ public struct IS_SPX
     public byte Penalty;                 // Current penalty value (PENALTY_x)
     public byte NumStops;                // Number of pit stops
     public byte Fuel200;                 // Fuel: if 255 then disabled, else actual_fuel = Fuel200 / 2
+}
+
+/// <summary>
+/// Pit Stop packet - sent when a player stops at the pit garage (24 bytes)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_PIT
+{
+    public byte Size;                    // 24
+    public byte Type;                    // ISP_PIT
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID
+
+    public ushort LapsDone;              // Laps completed
+    public ushort Flags;                 // Player flags
+
+    public byte FuelAdd;                 // Fuel added percent or 255
+    public byte Penalty;                 // Current penalty value (PENALTY_x)
+    public byte NumStops;                // Number of pit stops
+    public byte Sp3;                     // Spare
+
+    public byte Tyres0;                  // Tyre changed on wheel 0 (FL)
+    public byte Tyres1;                  // Tyre changed on wheel 1 (FR)
+    public byte Tyres2;                  // Tyre changed on wheel 2 (RL)
+    public byte Tyres3;                  // Tyre changed on wheel 3 (RR)
+
+    public uint Work;                    // Pit work flags
+    public uint Spare;                   // Spare
+}
+
+/// <summary>
+/// Pit Stop Finished packet - sent when pit work ends (12 bytes)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_PSF
+{
+    public byte Size;                    // 12
+    public byte Type;                    // ISP_PSF
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID
+
+    public uint STime;                   // Stop time (ms)
+    public uint Spare;                   // Spare
+}
+
+/// <summary>
+/// Pit Lane packet - sent when a player enters or leaves pit lane (8 bytes)
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_PLA
+{
+    public byte Size;                    // 8
+    public byte Type;                    // ISP_PLA
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID
+
+    public byte Fact;                    // Pit lane fact (PITLANE_x)
+    public byte Sp1;                     // Spare
+    public byte Sp2;                     // Spare
+    public byte Sp3;                     // Spare
 }
 
 /// <summary>
