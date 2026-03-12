@@ -14,6 +14,7 @@ let lapHistoryShowTimer = null;
 let lapHistoryHideTimer = null;
 let lastPointerClientX = null;
 let lastPointerClientY = null;
+let isLapHistoryTooltipHovered = false;
 let sessionClockTimerId = null;
 let sessionClockBaseMs = 0;
 let sessionClockSyncedAtMs = 0;
@@ -115,12 +116,16 @@ function refreshLapHistoryTriggerStyles() {
 function setLapHistoryHoverTarget(driverId) {
     const nextDriverId = driverId ? String(driverId) : null;
     if (hoveredLapHistoryDriverId === nextDriverId) {
-        if (visibleLapHistoryDriverId === nextDriverId) {
+        if (nextDriverId && visibleLapHistoryDriverId === nextDriverId) {
             updateLapHistoryTooltip();
         }
 
+        if (nextDriverId || visibleLapHistoryDriverId === null) {
+            refreshLapHistoryTriggerStyles();
+            return;
+        }
+
         refreshLapHistoryTriggerStyles();
-        return;
     }
 
     hoveredLapHistoryDriverId = nextDriverId;
@@ -130,6 +135,10 @@ function setLapHistoryHoverTarget(driverId) {
 
     if (!nextDriverId) {
         lapHistoryHideTimer = window.setTimeout(() => {
+            if (isLapHistoryTooltipHovered) {
+                return;
+            }
+
             visibleLapHistoryDriverId = null;
             refreshLapHistoryTriggerStyles();
             hideLapHistoryTooltip();
@@ -226,6 +235,7 @@ function syncLapHistoryCache(data) {
         clearLapHistoryTimers();
         hoveredLapHistoryDriverId = null;
         visibleLapHistoryDriverId = null;
+        isLapHistoryTooltipHovered = false;
         refreshLapHistoryTriggerStyles();
         hideLapHistoryTooltip();
     }
@@ -257,6 +267,22 @@ function getOrCreateLapHistoryTooltip() {
     tooltip = document.createElement("div");
     tooltip.id = "lap-history-tooltip";
     tooltip.className = "lap-history-tooltip";
+    tooltip.addEventListener("mouseenter", () => {
+        isLapHistoryTooltipHovered = true;
+        window.clearTimeout(lapHistoryHideTimer);
+    });
+    tooltip.addEventListener("mousemove", (event) => {
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+    });
+    tooltip.addEventListener("mouseleave", (event) => {
+        isLapHistoryTooltipHovered = false;
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+
+        const nextTrigger = getLapHistoryTrigger(event.relatedTarget);
+        setLapHistoryHoverTarget(nextTrigger?.dataset.lastLapDriverId || null);
+    });
     document.body.appendChild(tooltip);
     return tooltip;
 }
