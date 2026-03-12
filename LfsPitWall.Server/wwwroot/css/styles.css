@@ -261,6 +261,52 @@ body {
     pointer-events: none;
 }
 
+.track-map-overlay {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: min(60%, 240px);
+    pointer-events: none;
+}
+
+.track-map-overlay-chip {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.24);
+    backdrop-filter: blur(10px);
+}
+
+.track-map-overlay-label {
+    color: #94a3b8;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.track-map-overlay-value {
+    max-width: 100%;
+    color: #f8fafc;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .timing-header {
     display: flex;
     align-items: center;
@@ -306,24 +352,40 @@ body {
     display: grid;
     grid-template-columns: minmax(0, 1.65fr) minmax(250px, 0.75fr);
     gap: 18px;
-    align-items: stretch;
+    align-items: start;
 }
 
 .standings-map-stage {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-}
-
-.standings-map-toolbar {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 0;
 }
 
 .track-map-shell--main {
     min-height: 520px;
+}
+
+.track-map-status-badge {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    max-width: calc(100% - 28px);
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.24);
+    backdrop-filter: blur(10px);
+    color: #cbd5e1;
+    font-size: 0.74rem;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
 }
 
 .track-map-legend-panel {
@@ -333,7 +395,9 @@ body {
     padding: 14px;
     display: flex;
     flex-direction: column;
+    align-self: start;
     min-height: 0;
+    overflow: hidden;
 }
 
 .track-map-legend-header {
@@ -343,9 +407,31 @@ body {
 .track-map-legend {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    flex: 1 1 auto;
+    gap: 6px;
     overflow-y: auto;
     min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.55) rgba(15, 23, 42, 0.25);
+}
+
+.track-map-legend::-webkit-scrollbar {
+    width: 10px;
+}
+
+.track-map-legend::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.22);
+    border-radius: 999px;
+}
+
+.track-map-legend::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.72), rgba(100, 116, 139, 0.72));
+    border: 2px solid rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+}
+
+.track-map-legend::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(203, 213, 225, 0.82), rgba(148, 163, 184, 0.82));
 }
 
 .track-map-legend-empty {
@@ -358,8 +444,8 @@ body {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 7px 10px;
     border-radius: 12px;
     background: rgba(30, 41, 59, 0.42);
     border: 1px solid transparent;
@@ -372,6 +458,12 @@ body {
     background: rgba(51, 65, 85, 0.7);
     border-color: rgba(148, 163, 184, 0.22);
     transform: translateY(-1px);
+}
+
+.track-map-legend-entry.is-selected {
+    background: rgba(71, 85, 105, 0.78);
+    border-color: rgba(248, 250, 252, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.35);
 }
 
 .track-map-legend-position {
@@ -392,23 +484,29 @@ body {
 
 .track-map-legend-name {
     min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .track-map-legend-driver {
-    display: block;
+    display: inline-block;
     color: #f8fafc;
-    font-size: 0.92rem;
+    font-size: 0.88rem;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .track-map-legend-meta {
-    display: block;
+    display: inline-block;
+    flex: 0 1 auto;
     color: #94a3b8;
-    font-size: 0.76rem;
-    margin-top: 2px;
+    font-size: 0.72rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -416,7 +514,7 @@ body {
 
 .track-map-legend-status {
     color: #cbd5e1;
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     white-space: nowrap;
 }
 
@@ -449,20 +547,52 @@ body {
         padding: 16px;
     }
 
-    .standings-map-toolbar {
-        flex-direction: column;
-    }
-
     .track-map-shell--main {
         min-height: 300px;
     }
 
-    .track-map-legend-entry {
-        grid-template-columns: auto auto minmax(0, 1fr);
+    .track-map-status-badge {
+        left: 10px;
+        bottom: 10px;
+        max-width: calc(100% - 20px);
+        padding: 5px 8px;
+        font-size: 0.68rem;
     }
 
-    .track-map-legend-status {
-        grid-column: 3;
+    .track-map-overlay {
+        top: 10px;
+        right: 10px;
+        gap: 6px;
+        max-width: calc(100% - 20px);
+    }
+
+    .track-map-overlay-chip {
+        padding: 6px 8px;
+        border-radius: 10px;
+    }
+
+    .track-map-overlay-value {
+        font-size: 0.8rem;
+    }
+
+    .track-map-legend-entry {
+        grid-template-columns: auto auto minmax(0, 1fr) auto;
+        gap: 6px;
+        padding: 6px 8px;
+    }
+
+    .track-map-legend-name {
+        gap: 6px;
+    }
+
+    .track-map-legend-driver {
+        font-size: 0.82rem;
+    }
+
+    .track-map-legend-meta,
+    .track-map-legend-status,
+    .track-map-legend-position {
+        font-size: 0.68rem;
     }
 }
 
@@ -474,7 +604,8 @@ body {
 }
 
 .header-bar {
-    background: linear-gradient(90deg, #7c3aed 0%, #6d55ff 100%);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(9, 14, 26, 0.98) 100%);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .driver-row {
@@ -489,6 +620,11 @@ body {
 
 .driver-row.is-hovered {
     background: rgba(40, 40, 60, 0.8);
+}
+
+.driver-row.is-selected {
+    background: rgba(71, 85, 105, 0.72);
+    box-shadow: inset 3px 0 0 rgba(250, 204, 21, 0.9);
 }
 
 /* --- Lap Time Highlighting --- */

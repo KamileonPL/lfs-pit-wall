@@ -8,6 +8,8 @@ namespace LfsPitWall.Server.Helpers;
 /// </summary>
 public static class SessionDataBuilder
 {
+    private static readonly TimeSpan MapTelemetryFreshnessWindow = TimeSpan.FromSeconds(4);
+
     public static object Build(RaceSession session)
     {
         var snapshotTimeUtc = DateTime.UtcNow;
@@ -66,11 +68,13 @@ public static class SessionDataBuilder
                 uint? gapToPreviousMs = session.SessionType == 2 && index > 0
                     ? GetGapToPreviousMs(d, orderedDrivers[index - 1])
                     : null;
+                var hasFreshWorldPosition = d.HasFreshWorldPosition(snapshotTimeUtc, MapTelemetryFreshnessWindow);
 
                 return new
                 {
                     playerId = d.PlayerId,
                     name = d.Name,
+                    mapLabelHtml = d.NameHtml,
                     nameHtml = string.IsNullOrEmpty(d.Username)
                         ? d.NameHtml
                         : $"{d.NameHtml} <span style=\"color:#AAAAAA\">({System.Net.WebUtility.HtmlEncode(d.Username)})</span>",
@@ -85,10 +89,10 @@ public static class SessionDataBuilder
                     gapToPreviousMs,
                     personalBestSectors = d.PersonalBestSectors,
                     tyreTypes = d.TyreTypes.Select(t => (int)t).ToArray(),
-                    hasWorldPosition = d.HasWorldPosition,
-                    mapX = d.HasWorldPosition ? d.WorldX : (int?)null,
-                    mapY = d.HasWorldPosition ? d.WorldY : (int?)null,
-                    heading = d.HasWorldPosition ? d.CurrentHeading : (ushort?)null,
+                    hasWorldPosition = hasFreshWorldPosition,
+                    mapX = hasFreshWorldPosition ? d.WorldX : (int?)null,
+                    mapY = hasFreshWorldPosition ? d.WorldY : (int?)null,
+                    heading = hasFreshWorldPosition ? d.CurrentHeading : (ushort?)null,
                     pitStops = d.PitStops,
                     pitStatus = d.GetPitStatus(),
                     pitLaneTimeMs = d.GetDisplayedPitLaneTimeMs(snapshotTimeUtc),

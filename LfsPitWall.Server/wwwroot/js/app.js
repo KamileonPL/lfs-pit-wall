@@ -23,6 +23,7 @@ let sessionClockLastServerMs = 0;
 let sessionClockRunning = false;
 let lastRenderedChatRevision = null;
 let standingsViewMode = "table";
+const selectedDriverIds = new Set();
 const driverLapHistoryCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
@@ -309,6 +310,7 @@ function getDriverById(playerId) {
 function refreshDriverHoverState() {
     document.querySelectorAll("#drivers-table tr[data-driver-id]").forEach((row) => {
         row.classList.toggle("is-hovered", row.dataset.driverId === hoveredDriverId);
+        row.classList.toggle("is-selected", selectedDriverIds.has(row.dataset.driverId));
     });
 
     window.TrackMapController?.setHoveredDriverId(hoveredDriverId);
@@ -322,6 +324,47 @@ function setHoveredDriverId(driverId) {
 
     hoveredDriverId = nextDriverId;
     refreshDriverHoverState();
+}
+
+function getSelectedDriverIds() {
+    return new Set(selectedDriverIds);
+}
+
+function refreshSelectedDriverState() {
+    document.querySelectorAll("#drivers-table tr[data-driver-id]").forEach((row) => {
+        row.classList.toggle("is-selected", selectedDriverIds.has(row.dataset.driverId));
+    });
+
+    window.TrackMapController?.refreshSelection();
+}
+
+function toggleSelectedDriverId(driverId) {
+    const nextDriverId = driverId ? String(driverId) : null;
+    if (!nextDriverId) {
+        return;
+    }
+
+    if (selectedDriverIds.has(nextDriverId)) {
+        selectedDriverIds.delete(nextDriverId);
+    } else {
+        selectedDriverIds.add(nextDriverId);
+    }
+
+    refreshSelectedDriverState();
+}
+
+function pruneSelectedDriverIds(activeDriverIds) {
+    let changed = false;
+    Array.from(selectedDriverIds).forEach((driverId) => {
+        if (!activeDriverIds.has(driverId)) {
+            selectedDriverIds.delete(driverId);
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        refreshSelectedDriverState();
+    }
 }
 
 function setStandingsViewMode(mode) {
@@ -970,6 +1013,7 @@ function renderChatMessages(data) {
 function updateDriversTable(data) {
     const tableBody = document.getElementById("drivers-table");
     const playerIds = new Set((data.players || []).map(player => String(player.playerId)));
+    pruneSelectedDriverIds(playerIds);
 
     if (hoveredDriverId && !playerIds.has(hoveredDriverId)) {
         setHoveredDriverId(null);
@@ -1035,12 +1079,13 @@ function updateDriversTable(data) {
             ? `position-${position}`
             : "";
         const hoverClass = String(driver.playerId) === hoveredDriverId ? " is-hovered" : "";
+        const selectedClass = selectedDriverIds.has(String(driver.playerId)) ? " is-selected" : "";
 
         const driverColor = driver.driverColor || "#9CA3AF";
         const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: #F5F5F5;"`;
 
         html += `
-            <tr class="driver-row${hoverClass}" data-driver-id="${driver.playerId}">
+            <tr class="driver-row${hoverClass}${selectedClass}" data-driver-id="${driver.playerId}">
                 <td class="px-4 py-3">
                     <div class="position-badge ${positionBadgeClass}">${position}</div>
                 </td>
@@ -1207,7 +1252,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.TrackMapController?.initialize({
         getLatestSessionData: () => latestSessionData,
         getHoveredDriverId: () => hoveredDriverId,
-        setHoveredDriverId: (driverId) => setHoveredDriverId(driverId)
+        setHoveredDriverId: (driverId) => setHoveredDriverId(driverId),
+        getSelectedDriverIds: () => getSelectedDriverIds(),
+        toggleSelectedDriverId: (driverId) => toggleSelectedDriverId(driverId)
     });
 
     loadSignalRScript()

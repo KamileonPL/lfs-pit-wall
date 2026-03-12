@@ -57,27 +57,56 @@ public class TimingPointSnapshot
 /// </summary>
 public class TrackMapNodeSample
 {
+    private const int MaxStoredSamples = 41;
+    private readonly List<TrackMapRawSample> _samples = new();
+
     public ushort Node { get; set; }
-    public double AverageX { get; private set; }
-    public double AverageY { get; private set; }
     public uint SampleCount { get; private set; }
 
     public void AddSample(int x, int y)
     {
         SampleCount++;
-        AverageX += (x - AverageX) / SampleCount;
-        AverageY += (y - AverageY) / SampleCount;
+
+        if (_samples.Count >= MaxStoredSamples)
+        {
+            _samples.RemoveAt(0);
+        }
+
+        _samples.Add(new TrackMapRawSample(x, y));
     }
 
     public TrackMapPoint ToPoint()
     {
+        if (_samples.Count == 0)
+        {
+            return new TrackMapPoint { Node = Node };
+        }
+
+        var orderedX = _samples.Select(sample => sample.X).OrderBy(value => value).ToList();
+        var orderedY = _samples.Select(sample => sample.Y).OrderBy(value => value).ToList();
+        var medianX = orderedX[orderedX.Count / 2];
+        var medianY = orderedY[orderedY.Count / 2];
+
+        var representativeSample = _samples
+            .OrderBy(sample => GetSquaredDistance(sample.X, sample.Y, medianX, medianY))
+            .First();
+
         return new TrackMapPoint
         {
             Node = Node,
-            X = (int)Math.Round(AverageX),
-            Y = (int)Math.Round(AverageY)
+            X = representativeSample.X,
+            Y = representativeSample.Y
         };
     }
+
+    private static long GetSquaredDistance(int x1, int y1, int x2, int y2)
+    {
+        var deltaX = (long)x1 - x2;
+        var deltaY = (long)y1 - y2;
+        return (deltaX * deltaX) + (deltaY * deltaY);
+    }
+
+    private readonly record struct TrackMapRawSample(int X, int Y);
 }
 
 /// <summary>
@@ -222,6 +251,11 @@ public class Driver
     public uint PitStops { get; set; }
 
     /// <summary>
+    /// LFS connection UCID associated with this driver.
+    /// </summary>
+    public byte ConnectionId { get; set; }
+
+    /// <summary>
     /// Whether the driver is currently in the pit lane.
     /// </summary>
     public bool IsInPitLane { get; private set; }
@@ -310,6 +344,11 @@ public class Driver
     /// Driver's highest speed reached in the current session, in km/h.
     /// </summary>
     public double TopSpeedKmh { get; private set; }
+
+    /// <summary>
+    /// Timestamp of the most recent live telemetry update used by the map.
+    /// </summary>
+    public DateTime? LastLiveTelemetryAtUtc { get; private set; }
 
     /// <summary>
     /// Lap history (lap-centric architecture - all laps stored here)
@@ -447,7 +486,27 @@ public class Driver
         WorldX = worldX;
         WorldY = worldY;
         CurrentHeading = heading;
+        LastLiveTelemetryAtUtc = DateTime.UtcNow;
         UpdateTopSpeed(rawSpeed);
+    }
+
+    public bool HasFreshWorldPosition(DateTime snapshotTimeUtc, TimeSpan maxTelemetryAge)
+    {
+        if (!HasWorldPosition || !LastLiveTelemetryAtUtc.HasValue)
+        {
+            return false;
+        }
+
+        return snapshotTimeUtc - LastLiveTelemetryAtUtc.Value <= maxTelemetryAge;
+    }
+
+    public bool ShouldContributeToTrackMap(bool isRaceSession)
+    {
+        return HasWorldPosition
+            && CurrentRacePosition > 0
+            && (!isRaceSession || LapsCompleted > 0)
+            && !IsInPitLane
+            && !IsPitStopActive;
     }
 
     public void UpdatePitStops(uint pitStops)
@@ -914,6 +973,25 @@ public class RaceSession
         lock (_playersLock)
         {
             Players.Remove(playerId);
+        }
+    }
+
+    /// <summary>
+    /// Removes all drivers belonging to a specific LFS connection (UCID).
+    /// </summary>
+    public void RemoveDriversByConnection(byte ucid)
+    {
+        lock (_playersLock)
+        {
+            var playerIdsToRemove = Players.Values
+                .Where(driver => driver.ConnectionId == ucid)
+                .Select(driver => driver.PlayerId)
+                .ToList();
+
+            foreach (var playerId in playerIdsToRemove)
+            {
+                Players.Remove(playerId);
+            }
         }
     }
 

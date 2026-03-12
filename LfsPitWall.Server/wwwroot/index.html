@@ -146,14 +146,18 @@
                 <div class="standings-map-view" id="standings-map-view" hidden>
                     <div class="standings-map-layout">
                         <div class="standings-map-stage">
-                            <div class="standings-map-toolbar">
-                                <div>
-                                    <p class="text-gray-400 text-sm">🗺️ Live Track Map</p>
-                                    <p class="text-xs text-gray-500" id="track-map-hint">Building a lightweight track outline from live MCI telemetry.</p>
-                                </div>
-                                <span class="chat-status-chip" id="track-map-status">Waiting for telemetry</span>
-                            </div>
                             <div class="track-map-shell track-map-shell--main">
+                                <div class="track-map-status-badge" id="track-map-status">Waiting for telemetry</div>
+                                <div class="track-map-overlay" id="track-map-overlay" aria-live="polite">
+                                    <div class="track-map-overlay-chip">
+                                        <span class="track-map-overlay-label">Laps Completed</span>
+                                        <span class="track-map-overlay-value" id="track-map-progress">-</span>
+                                    </div>
+                                    <div class="track-map-overlay-chip">
+                                        <span class="track-map-overlay-label">Track</span>
+                                        <span class="track-map-overlay-value" id="track-map-track-name">Unknown</span>
+                                    </div>
+                                </div>
                                 <canvas id="track-map-canvas" class="track-map-canvas" aria-label="Live track map"></canvas>
                                 <div class="track-map-empty" id="track-map-empty">Waiting for enough live position data to sketch the track...</div>
                             </div>

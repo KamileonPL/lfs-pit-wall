@@ -361,7 +361,11 @@ public class InSimService : BackgroundService
             }
 
             driver.UpdateLiveTelemetry(car.Node, car.Lap, car.Position, car.X, car.Y, car.Heading, car.Speed);
-            _raceSession.UpdateTrackMapNode(car.Node, car.X, car.Y);
+
+            if (driver.ShouldContributeToTrackMap(_raceSession.SessionType == 2))
+            {
+                _raceSession.UpdateTrackMapNode(car.Node, car.X, car.Y);
+            }
         }
     }
 
@@ -429,6 +433,7 @@ public class InSimService : BackgroundService
             driver.CarName = carName;
             driver.SkinName = skinName;
             driver.Username = username;
+            driver.ConnectionId = packet.UCID;
             driver.TyreTypes = new[] { packet.Tyres0, packet.Tyres1, packet.Tyres2, packet.Tyres3 };
             driver.FuelPercent = packet.Fuel == 255 ? null : packet.Fuel;
             _raceSession.RefreshSessionBestLapAuthor(driver);
@@ -446,6 +451,7 @@ public class InSimService : BackgroundService
             driver = new Driver
             {
                 PlayerId = packet.PLID,
+                ConnectionId = packet.UCID,
                 Name = formattedName,
                 NameHtml = LfsColorConverter.ConvertToHtml(playerName),  // Use original for color conversion
                 CarName = carName,
@@ -652,6 +658,8 @@ public class InSimService : BackgroundService
         _logger.LogDebug(
             "🔌 Connection Leave: UCID {UCID} - Total: {Total}",
             packet.UCID, packet.Total);
+
+        _raceSession.RemoveDriversByConnection(packet.UCID);
         
         // Clean up username mapping when connection leaves
         _raceSession.RemoveUsername(packet.UCID);
@@ -673,8 +681,13 @@ public class InSimService : BackgroundService
     private void HandleRaceStart(IS_RST packet)
     {
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
-        _raceSession.ClearTrackMap();
-        _raceSession.TrackName = string.IsNullOrEmpty(trackName) ? "Unknown" : trackName;
+        var normalizedTrackName = string.IsNullOrEmpty(trackName) ? "Unknown" : trackName;
+        if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, normalizedTrackName, StringComparison.OrdinalIgnoreCase))
+        {
+            _raceSession.ClearTrackMap();
+        }
+
+        _raceSession.TrackName = normalizedTrackName;
         _raceSession.WeatherType = packet.Weather;
         _raceSession.WindType = packet.Wind;
         

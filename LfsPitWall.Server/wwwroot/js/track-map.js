@@ -1,13 +1,17 @@
 window.TrackMapController = (() => {
     let trackMapResizeBound = false;
     let trackMapInteractionBound = false;
+    let trackMapLegendSizingBound = false;
     let trackMapAnimationFrameId = null;
+    let trackMapLegendResizeObserver = null;
     let lastTrackMapSnapshotAtMs = 0;
     let trackMapInterpolationDurationMs = 200;
     let trackMapStableBounds = null;
     let getLatestSessionData = () => null;
     let getHoveredDriverId = () => null;
     let setHoveredDriverId = () => {};
+    let getSelectedDriverIds = () => new Set();
+    let toggleSelectedDriverId = () => {};
     let lastRenderedDriverMarkers = [];
     const trackMapMotionState = new Map();
 
@@ -37,13 +41,23 @@ window.TrackMapController = (() => {
             setHoveredDriverId = options.setHoveredDriverId;
         }
 
+        if (typeof options.getSelectedDriverIds === "function") {
+            getSelectedDriverIds = options.getSelectedDriverIds;
+        }
+
+        if (typeof options.toggleSelectedDriverId === "function") {
+            toggleSelectedDriverId = options.toggleSelectedDriverId;
+        }
+
         bindTrackMapInteractions();
+        bindTrackMapLegendSizing();
 
         if (trackMapResizeBound) {
             return;
         }
 
         window.addEventListener("resize", () => {
+            syncTrackMapLegendPanelHeight();
             const latestSessionData = getLatestSessionData();
             if (latestSessionData) {
                 renderTrackMap(latestSessionData, performance.now());
@@ -56,6 +70,18 @@ window.TrackMapController = (() => {
     function handleSessionUpdate(data) {
         syncTrackMapMotion(data);
         renderTrackMapLegend(data);
+    }
+
+    function getDriverEntryFromEventTarget(target) {
+        if (target instanceof Element) {
+            return target.closest("[data-driver-id]");
+        }
+
+        if (target instanceof Node && target.parentElement) {
+            return target.parentElement.closest("[data-driver-id]");
+        }
+
+        return null;
     }
 
     function bindTrackMapInteractions() {
@@ -79,21 +105,105 @@ window.TrackMapController = (() => {
             canvas.addEventListener("mouseleave", () => {
                 setHoveredDriverId(null);
             });
+
+            canvas.addEventListener("click", (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                const clickedMarker = [...lastRenderedDriverMarkers]
+                    .reverse()
+                    .find((marker) => Math.hypot(marker.x - x, marker.y - y) <= marker.hitRadius);
+
+                if (clickedMarker?.driverId) {
+                    toggleSelectedDriverId(clickedMarker.driverId);
+                }
+            });
         }
 
         const legend = document.getElementById("track-map-legend");
         if (legend) {
             legend.addEventListener("mousemove", (event) => {
-                const entry = event.target.closest("[data-driver-id]");
+                const entry = getDriverEntryFromEventTarget(event.target);
                 setHoveredDriverId(entry?.dataset.driverId || null);
             });
 
             legend.addEventListener("mouseleave", () => {
                 setHoveredDriverId(null);
             });
+
+            legend.addEventListener("pointerdown", (event) => {
+                const entry = getDriverEntryFromEventTarget(event.target);
+                if (entry?.dataset.driverId) {
+                    event.preventDefault();
+                    toggleSelectedDriverId(entry.dataset.driverId);
+                }
+            });
         }
 
         trackMapInteractionBound = true;
+    }
+
+    function syncTrackMapLegendPanelHeight() {
+        const mapShell = document.querySelector(".track-map-shell--main");
+        const panel = document.querySelector(".track-map-legend-panel");
+
+        if (!(mapShell instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+            return;
+        }
+
+        if (window.matchMedia("(max-width: 1024px)").matches) {
+            panel.style.height = "";
+            panel.style.maxHeight = "";
+            return;
+        }
+
+        const mapHeight = Math.floor(mapShell.getBoundingClientRect().height);
+        const nextHeight = mapHeight > 0 ? `${mapHeight}px` : "";
+
+        panel.style.height = nextHeight;
+        panel.style.maxHeight = nextHeight;
+    }
+
+    function bindTrackMapLegendSizing() {
+        if (trackMapLegendSizingBound) {
+            return;
+        }
+
+        syncTrackMapLegendPanelHeight();
+
+        if (typeof ResizeObserver === "function") {
+            const mapShell = document.querySelector(".track-map-shell--main");
+            if (mapShell instanceof HTMLElement) {
+                trackMapLegendResizeObserver = new ResizeObserver(() => {
+                    syncTrackMapLegendPanelHeight();
+                });
+
+                trackMapLegendResizeObserver.observe(mapShell);
+            }
+        }
+
+        trackMapLegendSizingBound = true;
+    }
+
+    function updateTrackMapOverlay(data) {
+        const progressElement = document.getElementById("track-map-progress");
+        const trackNameElement = document.getElementById("track-map-track-name");
+
+        if (!(progressElement instanceof HTMLElement) || !(trackNameElement instanceof HTMLElement)) {
+            return;
+        }
+
+        const drivers = Array.isArray(data?.players) ? data.players : [];
+        const completedLaps = drivers.length > 0
+            ? Math.max(0, ...drivers.map((driver) => Number(driver?.lapsCompleted) || 0))
+            : 0;
+        const totalLaps = Number(data?.maxRaceLaps) || 0;
+
+        progressElement.textContent = totalLaps > 0
+            ? `${completedLaps}/${totalLaps}`
+            : `${completedLaps}`;
+
+        trackNameElement.textContent = String(data?.trackName || "Unknown");
     }
 
     function ensureTrackMapCanvasSize(canvas, context) {
@@ -267,11 +377,14 @@ window.TrackMapController = (() => {
         trackMapAnimationFrameId = window.requestAnimationFrame(tick);
     }
 
-    function getAnimatedTrackDrivers(data, nowMs) {
+    function getTrackMapRenderableDrivers(data) {
         const drivers = Array.isArray(data?.players) ? data.players : [];
 
-        return drivers
-            .filter((driver) => driver.hasWorldPosition && Number.isFinite(driver.mapX) && Number.isFinite(driver.mapY))
+        return drivers.filter((driver) => driver.hasWorldPosition && Number.isFinite(driver.mapX) && Number.isFinite(driver.mapY));
+    }
+
+    function getAnimatedTrackDrivers(data, nowMs) {
+        return getTrackMapRenderableDrivers(data)
             .map((driver) => {
                 const driverId = String(driver.playerId);
                 const motionState = trackMapMotionState.get(driverId);
@@ -519,14 +632,108 @@ window.TrackMapController = (() => {
         }
     }
 
+    function stripLfsControlCodes(text) {
+        return String(text || "")
+            .replace(/\^[0-9a-z]/gi, "")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function getTrackMapDriverLabelSegments(driver) {
+        const fallbackColor = driver?.driverColor || "#cbd5e1";
+        const fallbackText = stripLfsControlCodes(driver?.name) || String(driver?.username || "").trim() || "Driver";
+        const sourceHtml = String(driver?.mapLabelHtml || driver?.nameHtml || "").trim();
+
+        if (!sourceHtml) {
+            return [{ text: fallbackText, color: fallbackColor }];
+        }
+
+        const container = document.createElement("div");
+        container.innerHTML = sourceHtml;
+        const segments = [];
+
+        const visitNode = (node, inheritedColor) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = String(node.textContent || "");
+                if (!text) {
+                    return;
+                }
+
+                segments.push({
+                    text,
+                    color: inheritedColor || fallbackColor
+                });
+                return;
+            }
+
+            if (!(node instanceof Element)) {
+                return;
+            }
+
+            const nextColor = node.style?.color || inheritedColor || fallbackColor;
+            Array.from(node.childNodes).forEach((childNode) => visitNode(childNode, nextColor));
+        };
+
+        Array.from(container.childNodes).forEach((childNode) => visitNode(childNode, fallbackColor));
+
+        const normalizedSegments = segments
+            .map((segment) => ({
+                text: segment.text.replace(/\s+/g, " "),
+                color: segment.color || fallbackColor
+            }))
+            .filter((segment) => segment.text.length > 0);
+
+        if (normalizedSegments.length === 0) {
+            return [{ text: fallbackText, color: fallbackColor }];
+        }
+
+        const mergedSegments = [];
+        normalizedSegments.forEach((segment) => {
+            const previousSegment = mergedSegments[mergedSegments.length - 1];
+            if (previousSegment && previousSegment.color === segment.color) {
+                previousSegment.text += segment.text;
+            } else {
+                mergedSegments.push({ ...segment });
+            }
+        });
+
+        while (mergedSegments.length > 1) {
+            const lastSegment = mergedSegments[mergedSegments.length - 1];
+            if (!/^\s*\([^)]+\)\s*$/.test(lastSegment.text)) {
+                break;
+            }
+
+            mergedSegments.pop();
+        }
+
+        return mergedSegments;
+    }
+
+    function refreshTrackMapLegendInteractionState() {
+        const legend = document.getElementById("track-map-legend");
+        if (!legend) {
+            return;
+        }
+
+        const hoveredDriverId = getHoveredDriverId();
+        const selectedDriverIds = getSelectedDriverIds();
+
+        legend.querySelectorAll("[data-driver-id]").forEach((entry) => {
+            const driverId = String(entry.dataset.driverId || "");
+            entry.classList.toggle("is-hovered", driverId === hoveredDriverId);
+            entry.classList.toggle("is-selected", selectedDriverIds.has(driverId));
+        });
+    }
+
     function renderTrackMapLegend(data) {
         const legend = document.getElementById("track-map-legend");
         if (!legend) {
             return;
         }
 
-        const drivers = Array.isArray(data?.players) ? data.players : [];
+        const drivers = getTrackMapRenderableDrivers(data);
         const hoveredDriverId = getHoveredDriverId();
+        const selectedDriverIds = getSelectedDriverIds();
 
         if (drivers.length === 0) {
             legend.innerHTML = '<div class="track-map-legend-empty">Waiting for drivers...</div>';
@@ -536,13 +743,14 @@ window.TrackMapController = (() => {
         legend.innerHTML = drivers.map((driver, index) => {
             const driverId = String(driver.playerId);
             const isHovered = hoveredDriverId === driverId;
+            const isSelected = selectedDriverIds.has(driverId);
             const driverColor = driver.driverColor || "#cbd5e1";
             const driverName = driver.nameHtml || driver.name || "Unknown driver";
             const meta = driver.carName || "-";
             const status = getTrackLegendStatus(driver);
 
             return `
-                <div class="track-map-legend-entry${isHovered ? ' is-hovered' : ''}" data-driver-id="${driverId}">
+                <div class="track-map-legend-entry${isHovered ? ' is-hovered' : ''}${isSelected ? ' is-selected' : ''}" data-driver-id="${driverId}">
                     <span class="track-map-legend-position">P${index + 1}</span>
                     <span class="track-map-legend-dot" style="background:${driverColor}"></span>
                     <div class="track-map-legend-name">
@@ -552,14 +760,15 @@ window.TrackMapController = (() => {
                     <span class="track-map-legend-status">${status}</span>
                 </div>`;
         }).join("");
+
+        refreshTrackMapLegendInteractionState();
     }
 
     function renderTrackMap(data, nowMs = performance.now()) {
         const canvas = document.getElementById("track-map-canvas");
         const emptyState = document.getElementById("track-map-empty");
         const statusElement = document.getElementById("track-map-status");
-        const hintElement = document.getElementById("track-map-hint");
-        if (!canvas || !emptyState || !statusElement || !hintElement) {
+        if (!canvas || !emptyState || !statusElement) {
             return;
         }
 
@@ -573,17 +782,17 @@ window.TrackMapController = (() => {
         const trackGeometry = buildTrackMapGeometry(trackPoints);
         const drivers = getAnimatedTrackDrivers(data, nowMs);
         const hoveredDriverId = getHoveredDriverId();
+        const selectedDriverIds = getSelectedDriverIds();
         const size = ensureTrackMapCanvasSize(canvas, context);
         lastRenderedDriverMarkers = [];
+
+        updateTrackMapOverlay(data);
 
         context.clearRect(0, 0, size.width, size.height);
         context.fillStyle = "rgba(15, 23, 42, 0.22)";
         context.fillRect(0, 0, size.width, size.height);
 
         statusElement.textContent = `${trackGeometry.rawPointCount} nodes • ${drivers.length} cars`;
-        hintElement.textContent = trackGeometry.rawPointCount >= 12
-            ? "Live outline is lightly smoothed from observed path nodes and split across discontinuities."
-            : "Outline is still filling in as cars circulate around the track.";
 
         const rawViewBounds = getTrackMapViewBounds(trackGeometry, drivers);
         if (!rawViewBounds) {
@@ -647,14 +856,22 @@ window.TrackMapController = (() => {
         drawOrder.forEach((driver) => {
             const point = toCanvasPoint(driver.mapX, driver.mapY);
             const isHovered = hoveredDriverId === String(driver.playerId);
+            const isSelected = selectedDriverIds.has(String(driver.playerId));
             const radius = Number(driver.currentRacePosition) === 1 ? 8 : 6;
-            const renderedRadius = isHovered ? radius + 2.5 : radius;
+            const renderedRadius = radius + (isSelected ? 3 : 0) + (isHovered ? 2.5 : 0);
             const primaryColor = driver.driverColor || "#cbd5e1";
             const outlineColor = driver.pitStatus === "service"
                 ? "#fbbf24"
                 : driver.pitStatus === "lane"
                     ? "#38bdf8"
                     : "rgba(15, 23, 42, 0.95)";
+
+            if (isSelected) {
+                context.fillStyle = "rgba(250, 204, 21, 0.22)";
+                context.beginPath();
+                context.arc(point.x, point.y, renderedRadius + 8, 0, Math.PI * 2);
+                context.fill();
+            }
 
             if (isHovered) {
                 context.fillStyle = "rgba(248, 250, 252, 0.16)";
@@ -668,8 +885,8 @@ window.TrackMapController = (() => {
             context.arc(point.x, point.y, renderedRadius, 0, Math.PI * 2);
             context.fill();
 
-            context.lineWidth = isHovered ? 3 : 2;
-            context.strokeStyle = outlineColor;
+            context.lineWidth = isSelected ? 4 : isHovered ? 3 : 2;
+            context.strokeStyle = isSelected ? "#f8fafc" : outlineColor;
             context.stroke();
 
             lastRenderedDriverMarkers.push({
@@ -686,9 +903,41 @@ window.TrackMapController = (() => {
                 context.textBaseline = "bottom";
                 context.fillText(`P${driver.currentRacePosition}`, point.x, point.y - renderedRadius - 6);
             }
+
+            if (isSelected) {
+                const labelSegments = getTrackMapDriverLabelSegments(driver);
+                const labelY = point.y - renderedRadius - 18;
+                context.font = "600 12px Segoe UI";
+                context.textBaseline = "middle";
+
+                const labelTextWidth = labelSegments.reduce((totalWidth, segment) => {
+                    return totalWidth + context.measureText(segment.text).width;
+                }, 0);
+                const labelWidth = Math.ceil(labelTextWidth) + 14;
+                const labelHeight = 22;
+                const labelX = point.x - (labelWidth / 2);
+                const labelTop = labelY - (labelHeight / 2);
+
+                context.fillStyle = "rgba(15, 23, 42, 0.82)";
+                context.beginPath();
+                context.roundRect(labelX, labelTop, labelWidth, labelHeight, 10);
+                context.fill();
+
+                context.strokeStyle = primaryColor;
+                context.lineWidth = 1.5;
+                context.stroke();
+
+                let currentTextX = labelX + 7;
+                context.textAlign = "left";
+                labelSegments.forEach((segment) => {
+                    context.fillStyle = segment.color || primaryColor;
+                    context.fillText(segment.text, currentTextX, labelY + 0.5);
+                    currentTextX += context.measureText(segment.text).width;
+                });
+            }
         });
 
-        renderTrackMapLegend(data);
+        refreshTrackMapLegendInteractionState();
     }
 
     return {
@@ -696,7 +945,14 @@ window.TrackMapController = (() => {
         handleSessionUpdate,
         render: renderTrackMap,
         setHoveredDriverId(driverId) {
-            renderTrackMapLegend(getLatestSessionData());
+            refreshTrackMapLegendInteractionState();
+            const latestSessionData = getLatestSessionData();
+            if (latestSessionData) {
+                renderTrackMap(latestSessionData, performance.now());
+            }
+        },
+        refreshSelection() {
+            refreshTrackMapLegendInteractionState();
             const latestSessionData = getLatestSessionData();
             if (latestSessionData) {
                 renderTrackMap(latestSessionData, performance.now());
