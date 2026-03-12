@@ -427,6 +427,16 @@ public class RaceSession
     public string TrackName { get; set; } = "Unknown";
 
     /// <summary>
+    /// Multiplayer host name as plain text.
+    /// </summary>
+    public string HostName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Multiplayer host name formatted with LFS color codes converted to HTML.
+    /// </summary>
+    public string HostNameHtml { get; set; } = string.Empty;
+
+    /// <summary>
     /// Session type: 0=practice, 1=qualifying, 2=race
     /// </summary>
     public byte SessionType { get; set; }
@@ -736,6 +746,8 @@ public class RaceSession
         lock (_playersLock)
         {
             TrackName = "Unknown";
+            HostName = string.Empty;
+            HostNameHtml = string.Empty;
             SessionType = 0;
             WeatherType = 0;
             WindType = 0;

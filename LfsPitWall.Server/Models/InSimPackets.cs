@@ -231,6 +231,27 @@ public struct IS_VER
 }
 
 /// <summary>
+/// Multiplayer notification packet - sent when a host is started or joined.
+/// Reply to TINY_ISM request.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_ISM
+{
+    public byte Size;                    // 40
+    public byte Type;                    // ISP_ISM
+    public byte ReqI;                    // 0 unless reply to TINY_ISM request
+    public byte Zero;                    // 0
+
+    public byte Host;                    // 0 = guest / 1 = host
+    public byte Sp1;                     // Spare
+    public byte Sp2;                     // Spare
+    public byte Sp3;                     // Spare
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+    public byte[] HName;                 // Name of the host joined or started
+}
+
+/// <summary>
 /// Tiny packet - physical size: 4 bytes, but Size field = 4 / 4 = 1 (INSIM_VERSION 10+)
 /// Used for simple messages
 /// </summary>

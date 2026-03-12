@@ -738,12 +738,18 @@ function getSectorNumbers(data) {
 // ── Session Info Update ───────────────────────────────────
 
 function updateSessionInfo(data) {
+    const serverNameElement = document.getElementById("server-name");
+
     document.getElementById("track-name").textContent = data.trackName || "Unknown";
     document.getElementById("session-type").textContent = data.sessionType || "-";
     document.getElementById("weather-type").textContent = data.weatherType || "-";
     document.getElementById("wind-type").textContent = data.windType || "-";
     document.getElementById("race-status").textContent = data.raceInProgress ? "🏁 LIVE" : "Idle";
     document.getElementById("driver-count").textContent = Array.isArray(data.players) ? data.players.length : 0;
+
+    if (serverNameElement) {
+        serverNameElement.innerHTML = data.hostNameHtml || data.hostName || "-";
+    }
 
     const maxLaps = Math.max(0, ...data.players.map(p => p.lapsCompleted || 0));
     const displayMaxLaps = data.maxRaceLaps || maxLaps;

@@ -41,6 +41,7 @@ public class InSimService : BackgroundService
     private void RegisterHandlers()
     {
         // Core session management
+        _dispatcher.Bind<IS_ISM>(InSimPacketType.ISP_ISM, HandleMultiplayerInfo);
         _dispatcher.Bind<IS_STA>(InSimPacketType.ISP_STA, HandleSessionState);
         _dispatcher.Bind<IS_RST>(InSimPacketType.ISP_RST, HandleRaceStart);
 
@@ -132,8 +133,6 @@ public class InSimService : BackgroundService
             "✅ Connected to LFS | Version: {Version} | Product: {Product} | InSim: {InSimVer}",
             verPacket.GetVersion(), verPacket.GetProduct(), verPacket.InSimVer);
 
-        await RequestInitialDataAsync();
-
         _keepAliveTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(KeepAliveIntervalMs));
     }
 
@@ -158,6 +157,9 @@ public class InSimService : BackgroundService
     {
         var keepAliveTask = ProcessKeepAliveAsync(cancellationToken);
         var receiveTask = ReceivePacketsLoopAsync(cancellationToken);
+
+        await RequestInitialDataAsync();
+
         await Task.WhenAny(keepAliveTask, receiveTask);
     }
 
@@ -233,6 +235,12 @@ public class InSimService : BackgroundService
             await _connection.SendAsync(new IS_TINY
             {
                 Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_ISM
+            }, CancellationToken.None);
+
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
                 ReqI = reqId, SubT = (byte)TinyPacketType.TINY_SST
             }, CancellationToken.None);
 
@@ -260,11 +268,26 @@ public class InSimService : BackgroundService
                 ReqI = reqId, SubT = (byte)TinyPacketType.TINY_RES
             }, CancellationToken.None);
 
-            _logger.LogDebug("📤 Sent info requests: SST, NCN, NPL, RST, RES");
+            _logger.LogDebug("📤 Sent info requests: ISM, SST, NCN, NPL, RST, RES");
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to send info requests");
+        }
+    }
+
+    private void HandleMultiplayerInfo(IS_ISM packet)
+    {
+        var hostNameRaw = LfsColorConverter.Decode(packet.HName ?? Array.Empty<byte>());
+        _raceSession.HostName = LfsColorConverter.RemoveColorCodes(hostNameRaw);
+        _raceSession.HostNameHtml = LfsColorConverter.ConvertToHtml(hostNameRaw);
+
+        if (!string.IsNullOrWhiteSpace(_raceSession.HostName))
+        {
+            _logger.LogInformation(
+                "🌐 MULTIPLAYER HOST: {HostName} | Mode: {Mode}",
+                _raceSession.HostName,
+                packet.Host == 1 ? "Host" : "Guest");
         }
     }
 

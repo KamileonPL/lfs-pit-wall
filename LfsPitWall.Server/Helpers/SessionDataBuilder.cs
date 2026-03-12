@@ -22,6 +22,8 @@ public static class SessionDataBuilder
         return new
         {
             trackName = session.TrackName,
+            hostName = session.HostName,
+            hostNameHtml = session.HostNameHtml,
             sessionType = session.GetSessionTypeString(),
             weatherType = session.GetWeatherTypeString(),
             windType = session.GetWindTypeString(),
