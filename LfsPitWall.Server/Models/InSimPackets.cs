@@ -79,6 +79,14 @@ public enum InSimPacketType : byte
     ISP_AII = 69,      // Info about AI car
 }
 
+public enum MsoUserType : byte
+{
+    System = 0,
+    User = 1,
+    Prefix = 2,
+    Local = 3,
+}
+
 /// <summary>
 /// TINY subtype enumeration
 /// </summary>
@@ -162,7 +170,7 @@ public struct IS_ISI
             ReqI = 1,                                              // Request IS_VER reply
             Zero = 0,
             UDPPort = 0,                                           // Use TCP for NLP/MCI
-            Flags = (ushort)InSimFlags.ISF_MCI,                  // MCI already includes node, lap, position and speed
+            Flags = (ushort)(InSimFlags.ISF_MCI | InSimFlags.ISF_MSO_COLS), // MCI for live timing, MSO_COLS to preserve LFS chat colours
             InSimVer = 10,                                         // INSIM_VERSION 10
             Prefix = 0,                                            // No special prefix
             Interval = 200,                                        // 200ms interval for NLP/MCI

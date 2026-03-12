@@ -21,6 +21,7 @@ let sessionClockBaseMs = 0;
 let sessionClockSyncedAtMs = 0;
 let sessionClockLastServerMs = 0;
 let sessionClockRunning = false;
+let lastRenderedChatRevision = null;
 const driverLapHistoryCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
@@ -558,6 +559,7 @@ function initializeConnection() {
         latestSessionData = data;
         syncSessionClock(data);
         updateSessionInfo(data);
+        renderChatMessages(data);
         updateDriversTable(data);
         updateBestLaps(data);
         syncLapHistoryHoverState();
@@ -754,6 +756,85 @@ function updateSessionInfo(data) {
     const maxLaps = Math.max(0, ...data.players.map(p => p.lapsCompleted || 0));
     const displayMaxLaps = data.maxRaceLaps || maxLaps;
     document.getElementById("max-laps").textContent = `${maxLaps}/${displayMaxLaps} Laps`;
+}
+
+// ── Chat Panel ───────────────────────────────────────────
+
+function formatChatTimestamp(value) {
+    if (!value) {
+        return "--:--:--";
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return "--:--:--";
+    }
+
+    return parsed.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+}
+
+function getChatKindMeta(kind) {
+    switch ((kind || "").toLowerCase()) {
+        case "user":
+            return { label: "User", className: "is-user" };
+        case "prefix":
+            return { label: "Prefix", className: "is-prefix" };
+        case "local":
+            return { label: "Local", className: "is-local" };
+        default:
+            return { label: "System", className: "is-system" };
+    }
+}
+
+function isPinnedToBottom(element) {
+    if (!element) {
+        return true;
+    }
+
+    return element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+}
+
+function renderChatMessages(data) {
+    const chatPanelElement = document.getElementById("chat-panel");
+    const chatCountElement = document.getElementById("chat-message-count");
+    if (!chatPanelElement || !chatCountElement) {
+        return;
+    }
+
+    const nextRevision = Number(data.chatRevision || 0);
+    if (lastRenderedChatRevision === nextRevision) {
+        return;
+    }
+
+    const chatMessages = Array.isArray(data.chatMessages) ? data.chatMessages : [];
+    const keepScrollPinned = isPinnedToBottom(chatPanelElement);
+    lastRenderedChatRevision = nextRevision;
+    chatCountElement.textContent = `${chatMessages.length} message${chatMessages.length === 1 ? "" : "s"}`;
+
+    if (chatMessages.length === 0) {
+        chatPanelElement.innerHTML = '<div class="chat-empty-state">Waiting for chat activity...</div>';
+        return;
+    }
+
+    chatPanelElement.innerHTML = chatMessages.map((message) => {
+        const kindMeta = getChatKindMeta(message.kind);
+        const messageHtml = message.messageHtml || message.messageText || "-";
+
+        return `
+            <div class="chat-entry">
+                <span class="chat-entry-time">${formatChatTimestamp(message.receivedAtUtc)}</span>
+                <span class="chat-entry-kind ${kindMeta.className}">${kindMeta.label}</span>
+                <div class="chat-entry-message">${messageHtml}</div>
+            </div>`;
+    }).join("");
+
+    if (keepScrollPinned) {
+        chatPanelElement.scrollTop = chatPanelElement.scrollHeight;
+    }
 }
 
 // ── Drivers Table Update ──────────────────────────────────

@@ -42,6 +42,7 @@ public class InSimService : BackgroundService
     {
         // Core session management
         _dispatcher.Bind<IS_ISM>(InSimPacketType.ISP_ISM, HandleMultiplayerInfo);
+        _dispatcher.BindRaw(InSimPacketType.ISP_MSO, HandleMessageOut);
         _dispatcher.Bind<IS_STA>(InSimPacketType.ISP_STA, HandleSessionState);
         _dispatcher.Bind<IS_RST>(InSimPacketType.ISP_RST, HandleRaceStart);
 
@@ -289,6 +290,41 @@ public class InSimService : BackgroundService
                 _raceSession.HostName,
                 packet.Host == 1 ? "Host" : "Guest");
         }
+    }
+
+    private void HandleMessageOut(byte[] packet)
+    {
+        const int headerSize = 8;
+
+        if (packet.Length <= headerSize)
+        {
+            return;
+        }
+
+        var userType = packet[6];
+        var msgBytes = new byte[packet.Length - headerSize];
+        Array.Copy(packet, headerSize, msgBytes, 0, msgBytes.Length);
+
+        var messageLfsText = LfsColorConverter.Decode(msgBytes);
+        var plainMessage = LfsColorConverter.RemoveColorCodes(messageLfsText).Trim();
+        if (string.IsNullOrWhiteSpace(plainMessage))
+        {
+            return;
+        }
+
+        _raceSession.AddChatMessage(new ChatMessageEntry
+        {
+            Kind = userType switch
+            {
+                (byte)MsoUserType.User => "user",
+                (byte)MsoUserType.Prefix => "prefix",
+                (byte)MsoUserType.Local => "local",
+                _ => "system"
+            },
+            MessageText = plainMessage,
+            MessageLfsText = messageLfsText,
+            ReceivedAtUtc = DateTime.UtcNow
+        });
     }
 
     // ── Packet Handlers ─────────────────────────────────

@@ -141,8 +141,21 @@
                 </div>
             </div>
 
+            <!-- LFS Chat -->
+            <div class="session-info rounded-lg p-4 border mb-6">
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <p class="text-gray-400 text-sm">💬 LFS Chat</p>
+                    </div>
+                    <span class="chat-status-chip" id="chat-message-count">0 messages</span>
+                </div>
+                <div id="chat-panel" class="chat-panel">
+                    <div class="chat-empty-state">Waiting for chat activity...</div>
+                </div>
+            </div>
+
             <!-- Debug Console -->
-            <div class="session-info rounded-lg p-4 border">
+            <div class="session-info rounded-lg p-4 border mb-6">
                 <div class="flex items-center justify-between mb-2">
                     <p class="text-gray-400 text-sm">🐛 Debug Console (Packets & Logs)</p>
                     <button onclick="clearDebugLog()" class="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600">Clear</button>

@@ -14,6 +14,7 @@ public static class SessionDataBuilder
         var sessionBestLap = session.SessionBestLap;
         var sessionBestSectorInfos = session.GetSessionBestSectorInfos();
         var orderedDrivers = session.GetDriversForStandings().ToList();
+        var chatMessages = session.GetChatMessages();
         var sessionTopSpeedDriver = orderedDrivers
             .Where(driver => driver.TopSpeedKmh > 0)
             .OrderByDescending(driver => driver.TopSpeedKmh)
@@ -32,6 +33,14 @@ public static class SessionDataBuilder
             maxRaceLaps = session.MaxRaceLaps,
             qualifyingMins = session.QualifyingMins,
             activeSectorCount = session.ActiveSectorCount,
+            chatRevision = session.ChatRevision,
+            chatMessages = chatMessages.Select(message => new
+            {
+                kind = message.Kind,
+                messageText = message.MessageText,
+                messageHtml = LfsColorConverter.ConvertToHtml(message.MessageLfsText),
+                receivedAtUtc = message.ReceivedAtUtc.ToString("O")
+            }).ToList(),
             players = orderedDrivers.Select((d, index) =>
             {
                 var personalBestLap = d.PersonalBestLap;

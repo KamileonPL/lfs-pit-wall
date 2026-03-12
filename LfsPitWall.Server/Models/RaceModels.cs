@@ -32,6 +32,17 @@ public class SessionBestSectorInfo
 }
 
 /// <summary>
+/// Represents a single chat line received from LFS.
+/// </summary>
+public class ChatMessageEntry
+{
+    public string Kind { get; set; } = "system";
+    public string MessageText { get; set; } = "";
+    public string MessageLfsText { get; set; } = "";
+    public DateTime ReceivedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
 /// Represents a driver's most recent elapsed-time checkpoint in the session.
 /// </summary>
 public class TimingPointSnapshot
@@ -420,6 +431,8 @@ public class RaceSession
 {
     private readonly object _playersLock = new object(); // Thread-safe access
     private readonly Dictionary<byte, string> _usernames = new(); // UCID -> UName mapping
+    private readonly List<ChatMessageEntry> _chatMessages = new();
+    private const int MaxChatMessages = 80;
 
     /// <summary>
     /// Track name
@@ -460,6 +473,11 @@ public class RaceSession
     /// Whether race is in progress
     /// </summary>
     public bool RaceInProgress { get; set; }
+
+    /// <summary>
+    /// Monotonic revision for the bounded chat history.
+    /// </summary>
+    public uint ChatRevision { get; private set; }
 
     /// <summary>
     /// Time elapsed in current session (ms)
@@ -760,6 +778,8 @@ public class RaceSession
             SessionBestLapNumber = null;
             SessionBestLapAuthorNameHtml = string.Empty;
             SessionBestLapAuthorUsername = string.Empty;
+            ChatRevision = 0;
+            _chatMessages.Clear();
             Players.Clear();
         }
     }
@@ -827,6 +847,42 @@ public class RaceSession
         lock (_playersLock)
         {
             _usernames.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Appends a chat message to bounded session history.
+    /// </summary>
+    public void AddChatMessage(ChatMessageEntry message)
+    {
+        lock (_playersLock)
+        {
+            _chatMessages.Add(message);
+            if (_chatMessages.Count > MaxChatMessages)
+            {
+                _chatMessages.RemoveAt(0);
+            }
+
+            ChatRevision++;
+        }
+    }
+
+    /// <summary>
+    /// Gets a snapshot of recent chat history.
+    /// </summary>
+    public IReadOnlyList<ChatMessageEntry> GetChatMessages()
+    {
+        lock (_playersLock)
+        {
+            return _chatMessages
+                .Select(message => new ChatMessageEntry
+                {
+                    Kind = message.Kind,
+                    MessageText = message.MessageText,
+                    MessageLfsText = message.MessageLfsText,
+                    ReceivedAtUtc = message.ReceivedAtUtc,
+                })
+                .ToList();
         }
     }
 }
