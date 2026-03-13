@@ -1,0 +1,369 @@
+Live for Speed Pubstats S2 v1.5 (19 Feb 2011)
+
+CHANGELOG :
+
+v1.4 => v1.5
+------------
+NEW ?action=counters    - get global car/track lapcount
+NEW ?action=help        - displays the full pubstat help text (omitting ?action will do the same)
+?action=wr  - added timestamp
+?action=ch  - added optional country filter
+?action=teams - added optional team filter to search for only one team instead of downloading the whole list
+?action=pb  - added fuel data (Given in % of tank capacity)
+
+v1.3 => v1.4
+------------
+NEW ?s=1/2/3	- alternate output formats can be selected (JSON, PHP Serialized, XML)
+NEW ?action=fuel	- returns fuel usages of a racer
+?action=hl	- added timestamp
+?action=pb	- added split times and timestamp
+?action=pst	- added racer's country
+?action=pst	- removed credits
+?action=ch	- added id_hl
+?action=wr	- added track and car query options
+?action=teams	- added team id
+?action=hosts	- added country code
+?action=hl_log	- removed 'format' query option. Use the global alternate output formats instead
+
+v1.2 => v1.3
+------------
+?action=teams	- changed teamname & url length from 64 bytes to 128
+?action=hl	- added split times
+?action=ch	- added split times
+?action=wr	- added split times
+?action=pst	- added details about current or last online activity
+
+-------------------------------------------------------------------------------------
+Legend: (all output is in plain text, unless specified otherwise)
+-------------------------------------------------------------------------------------
+
+<track>		3 digit representation.
+		000 (BL_gp), 001 (BL_gp_rev), 410 (KY_national, etc (game order)
+
+<car>		3 character representation.
+		XFG, XRG, XRT, RB4, FXO, LX4, LX6, MRT, UF1, RAC, FZ5, FOX, XFR, UFR, FO8, FXR, XRR, FZR, BF1
+
+<racer>		a valid LFS username
+
+<laptime>	a laptime represented in milliseconds
+
+<splitX>	a splittime represented in milliseconds
+
+<lapcount>	number of laps
+
+<fuel>		Fuel needed for a lap. Given in % of tank capacity
+
+<steering>	w, m, ks, kn
+
+<flags_hlaps>
+		1 LEFTHANDDRIVE
+		8 AUTOGEAR
+		16 SHIFTER
+		64 BRAKEHELP
+		128 AXISCLUTCH
+		512 AUTOCLUTCH
+		1024 MOUSESTEER *
+		2048 KN *
+		4096 KS *
+		(*) if not 1024, 2048 or 4096, steering is wheel.
+
+<id_hl>		ID used for hotlaps download : http://www.lfsworld.net/get_spr.php?file=<id_hl>
+
+<id_wr>		ID used for wr-hotlaps download : http://www.lfsworld.net/get_spr.php?file=<id_wr>&w=1
+
+<log_filter>	1=WR's - 2=top10 - 3=top50 - 4=ALL
+
+<starttime>	Unix timestamp (UTC) - used for hotlaps upload log; only display entries newer than <starttime>
+
+<timestamp> Unix timestamp (UTC)
+
+-----------------------------------------------------------------
+-----------------------------------------------------------------
+
+
+Version numbers
+---------------------
+Since v1.1, Version numbers have been introduced, to make future updates easier while not having to disrupt your existing scripts. If you were already running a script, you don't have to change anything, unless you want to make use of the new features that come with the latest versions.
+The current version is v1.5 
+Version numbers should be indicated in the url, via the "version" variable. If no version variable is given, the latest version will be used.
+
+User-identification (login / Ident-Key)
+--------------------------------------------
+The option to identify yourself has been introduced in v1.2. From then on identification has been voluntary, but since v1.3, identification is obligatory for all. You cannot use Pubstat without identification. This is not so that we can play big brother - it is so that we get a clearer picture on the usage of Pubstat, since this is a large portion of LFS World traffic.
+Identification is also meant to make the Premium Pubstat service possible.
+
+There are two ways to identify yourself:
+1) Using an Ident-Key which you can generate on behalf of your account on the LFS World settings pages
+You can feed an Ident-Key to the pubstat script via the following variable:
+&idk=<Ident-Key>
+
+If you bind an IP address to an Ident-Key, then pubstat will make sure that only that IP address can use that Ident-Key.
+
+or
+
+2) Using your normal web-login (from your LFS account), via the following two url-variables :
+&user=<username>
+&pass=<password>
+
+== Password Notice ==
+<password> may be your password in plain text, or you can md5 it before sending (strongly recommended).
+== Password Notice ==
+
+
+FREE PUBSTAT vs PREMIUM PUBSTAT
+------------------------------------
+Pubstat usage is free, but there is a tarpit that forces you to wait 5 seconds between your requests.
+It is for this reason that the Premium Pubstat version has been made available.
+The Premium Pubstat version allows you to place unlimited requests without any tarpit. However each request costs �0.00001 and every MB of data you transfer costs �0.0015.
+So if you want to make use of the Premium Pubstat service, you must put some extra money on your LFS account. You can do that from LFS World's "My LFSW Credit" window.
+
+You can indicate in your Pubstat request URL that you want to make use of the Premium service by including the following variable : &ps=1
+By doing so (and if you have money on your LFS account), you can place as many requests as you like, without having to wait.
+
+
+SCRIPT LOCATION and ACTIONS (requests):
+---------------------------------------
+
+script url: http://www.lfsworld.net/pubstat/get_stat2.php?version=1.5&idk=<Your_Ident_Key_Here>&action=...
+
+
+?action=help
+------------
+(returns this same document)
+
+
+----------
+?action=hl
+----------
+(get all hotlaps of a racer)
+
+requires:	&racer=<racer>
+optional:	-
+returns:	<id_hl> <track> <car> <split1> <split2> <split3> <laptime> <flags_hlaps> <timestamp>
+
+
+----------
+?action=ch
+----------
+(get all entries of a specific hotlap chart)
+
+requires:	&track=<track>&car=<car>
+optional:	&control=<steering>&country=<country>
+returns:	<id_hl> <split1> <split2> <split3> <laptime> <flags_hlaps> <racername>
+
+
+----------
+?action=wr
+----------
+(get wr's, either all or by track and/or car)
+
+requires:	-
+optional:	&track=<track>&car=<car>
+returns:	<id_wr> <track> <car> <split1> <split2> <split3> <laptime> <flags_hlaps> <racername> <timestamp>
+
+
+----------
+?action=pb
+----------
+(get all online pb's of a racer)
+
+requires:	&racer=<racer>
+optional:	-
+returns:	<track> <car> <split1> <split2> <split3> <laptime> <lapcount> <timestamp> <fuel>
+
+
+------------
+?action=fuel
+------------
+(get all fuel/lap tank percentages of a racer)
+*NEW as of version 1.4*
+
+requires:	&racer=<racer>
+optional:	-
+returns:	<track> <car> <fuel>
+
+
+-----------
+?action=pst
+-----------
+(online statistics of one racer)
+
+requires:	&racer=<racer>
+optional:	-
+returns:	distance in metres
+		fuel burnt in cl
+		laps
+		hosts joined
+		wins
+		second
+		third
+		finished
+		quals
+		pole
+		drags
+		drag wins
+		country
+		online status		(0 = offline, 1 = spectating, 2 = pits, 3 = in-race)
+		current / last hostname (or blank line if not online or on hidden host)
+		last_activity_time(*)	(Unix timestamp (UTC))
+		current / last known track(*)
+		current / last known car(*)
+
+(*) not always available.
+
+
+-------------
+?action=hosts
+-------------
+(get host list & information and online racers)
+
+requires:	-
+optional:	-
+returns:	HOST STRUCT:
+
+HOSTNAME        char[32]
+TMLT	        byte[4]
+TCRM            byte[4] // Track, Config, Reversed, Max players allowed
+CARS            uint
+RULES           uint
+LAPS            byte
+QUALMINS        byte
+COUNTRY         char[2]
+NROFRACERS      byte
+RACERNAMES      char[24 * NROFRACERS]
+
+LAPS work like this:
+    L is the given Laps value
+    0=practice
+    1-100=laps
+    101-190=110-1000 laps...  100+(L-100)*10
+    191-238=1-48 hours... L-190
+
+TMLT means:
+Type		0 : old S1 / 1 : new S1 / 2 : S2
+Main		version times 10 (e.g. 5 means version 0.5)
+Letter		e.g. 'Y' in 0.5Y
+TestId		zero : official / non-zero : test patch id
+
+(*) TRC is in numbers:
+000 = bl1
+001 = bl1r
+010 = bl2
+..
+220 = fe3
+221 = fe3r
+..
+etc.
+ 
+cars bits:
+    XFG          1
+    XRG          2
+    XRT          4
+    RB4          8
+    FXO          16
+    LX4          32
+    LX6          64
+    MRT          128
+    etc          etc
+
+rules bits :
+    CAN_VOTE     1
+    CAN_SELECT   2
+    QUALIFY      4
+    PRIVATE      8
+    MODIFIED     16
+    MIDRACEJOIN  32
+    MUSTPIT      64
+    CAN_RESET    128
+    FCV          256
+    CRUISE		 512
+
+
+-------------
+?action=teams
+-------------
+(get the entire teams database stored on lfs world)
+
+requires:	-
+optional:	&team=<teamname>    (displays only the given team)
+returns:	TEAM STRUCT:
+
+TID			  int;
+TEAM          char [128]
+TAG           char [6]
+COUNTRY       char [32]
+URL           char [128]
+BITS          int;
+INFO_LEN      word (2 bytes)
+INFO          char [INFO_LEN]  (Note : urlencoded)
+NR_MEMBERS    word (2 bytes)
+MEMBERS       char [24] * NR_MEMBERS
+
+BITS :
+// 1 : race
+// 2 : drift
+// 4 : drag
+// 8 : can apply
+// 16 : has host
+// 32 : Demo
+// 64 : S1
+// 128 : S2
+// 256 : S3
+
+
+--------------
+?action=hl_log
+--------------
+(get latest entries from the hotlap upload log)
+
+requires:	&version=1.2	(or higher)
+optional:	&log_filter=<log_filter>&lines=[1-150]&control=<steering>&starttime=<starttime>
+returns:	preformatted text, "<u>18:36/05-01-2006</u> <b>sanxav</b> has uploaded a new hotlap to 4th place: <b>1:56.240</b> on <a href="http://www.lfsworld.net/?win=hotlaps&whichTab=trackcharts&track=as&config=national_rev&car=XFR&racer=sanxav" target="_blank"><b>AS national rev</b> with the <b>xf gtr</b></a>\n"
+
+NOTE - use the alternate output formats to gather raw information instead of the preformatted html-lines
+Variables :
+	<timestamp>
+	<racername>
+	<country>
+	<track>
+	<car>
+	<split1>
+	<split2>
+	<split3>
+	<split4>
+	<pos>
+	<flags_hlaps>
+	<id_hl>
+			
+
+----------------
+?action=counters
+----------------
+(get global lapcounts of all cars and tracks)
+
+requires:   &type=(car|track)&version=1.4(or higher)
+optional:   -
+returns:    <car>|<track> <lapcount>
+
+
+-------------------
+Output compression
+-------------------
+(The output this script generates can be gzip compressed in 3 ways)
+
+&c=1    gzencode
+&c=2    gzcompress
+&c=3    gzdeflate
+
+------------------------
+Alternate output formats
+------------------------
+Normally, pubstats will return data in the format as explained above with every ?action.
+There is however an option to have the data returned to you in different formats, such as JSON, PHP Serialized and XML.
+To select an alternate output type, append one of the following query variables :
+
+&s=1    JSON
+&s=2    PHP Serialized
+&s=3    XML
+
+NOTE 1 - XML output has a Content-Type: text/xml header, unless c=2 or c=3 is used. With c=1, a Content-Encoding: gzip header is sent, so that for example browsers can understand the compression.
