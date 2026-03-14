@@ -176,14 +176,16 @@
             </div>
 
             <!-- LFS Chat -->
-            <div class="session-info rounded-lg p-4 border mb-6">
-                <div class="flex items-center justify-between mb-2">
-                    <div>
-                        <p class="text-gray-400 text-sm">💬 LFS Chat</p>
+            <div class="session-info chat-card rounded-lg p-4 border mb-6">
+                <div class="chat-card-header">
+                    <div class="chat-card-title-block">
+                        <div class="chat-card-title-row">
+                            <p class="chat-card-title">LFS Chat</p>
+                        </div>
                     </div>
                     <span class="chat-status-chip" id="chat-message-count">0 messages</span>
                 </div>
-                <div id="chat-panel" class="chat-panel">
+                <div id="chat-panel" class="chat-panel" aria-live="polite">
                     <div class="chat-empty-state">Waiting for chat activity...</div>
                 </div>
             </div>

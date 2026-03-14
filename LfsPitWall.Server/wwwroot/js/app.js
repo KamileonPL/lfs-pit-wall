@@ -1016,11 +1016,13 @@ function renderChatMessages(data) {
         const messageHtml = message.messageHtml || message.messageText || "-";
 
         return `
-            <div class="chat-entry">
-                <span class="chat-entry-time">${formatChatTimestamp(message.receivedAtUtc)}</span>
-                <span class="chat-entry-kind ${kindMeta.className}">${kindMeta.label}</span>
+            <article class="chat-entry ${kindMeta.className}">
+                <div class="chat-entry-meta">
+                    <span class="chat-entry-kind ${kindMeta.className}">${kindMeta.label}</span>
+                    <span class="chat-entry-time">${formatChatTimestamp(message.receivedAtUtc)}</span>
+                </div>
                 <div class="chat-entry-message">${messageHtml}</div>
-            </div>`;
+            </article>`;
     }).join("");
 
     if (keepScrollPinned) {
