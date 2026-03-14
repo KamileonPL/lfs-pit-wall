@@ -61,6 +61,7 @@ async function loadAppMetadata() {
     const versionElement = document.getElementById("app-version");
     const projectTypeElement = document.getElementById("app-project-type");
     const dataSourceLinkElement = document.getElementById("app-data-source-link");
+    const debugConsoleSectionElement = document.getElementById("debug-console-section");
     if (!versionElement) {
         return;
     }
@@ -83,6 +84,9 @@ async function loadAppMetadata() {
         }
         if (dataSourceLinkElement && metadata?.dataSourceUrl) {
             dataSourceLinkElement.href = metadata.dataSourceUrl;
+        }
+        if (debugConsoleSectionElement && metadata?.showDebugConsole === false) {
+            debugConsoleSectionElement.remove();
         }
     } catch (error) {
         debugLog(`App metadata fallback: ${error?.message || error}`, 'warn');
@@ -1240,7 +1244,12 @@ function debugLog(message, type = 'info') {
 }
 
 function clearDebugLog() {
-    document.getElementById("debug-console").innerHTML = '';
+    const consoleEl = document.getElementById("debug-console");
+    if (!consoleEl) {
+        return;
+    }
+
+    consoleEl.innerHTML = '';
 }
 
 // ── Console Override ──────────────────────────────────────

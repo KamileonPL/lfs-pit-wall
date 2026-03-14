@@ -4,7 +4,13 @@ using LfsPitWall.Server.Models;
 using LfsPitWall.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
-var appMetadata = AppMetadataProvider.Get();
+
+builder.Services
+    .AddOptions<UiOptions>()
+    .Bind(builder.Configuration.GetSection(UiOptions.SectionName));
+
+var showDebugConsole = builder.Configuration.GetValue<bool?>($"{UiOptions.SectionName}:ShowDebugConsole") ?? true;
+var appMetadata = AppMetadataProvider.Get(showDebugConsole);
 
 // Add race session singleton
 builder.Services.AddSingleton<RaceSession>();

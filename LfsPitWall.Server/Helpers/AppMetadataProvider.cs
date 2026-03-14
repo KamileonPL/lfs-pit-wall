@@ -11,7 +11,8 @@ public sealed record AppMetadata(
     bool IsOpenSource,
     string ProjectType,
     string DataSourceName,
-    string DataSourceUrl);
+    string DataSourceUrl,
+    bool ShowDebugConsole);
 
 public static class AppMetadataProvider
 {
@@ -24,7 +25,7 @@ public static class AppMetadataProvider
     private const string DefaultDataSourceName = "Live for Speed";
     private const string DefaultDataSourceUrl = "https://www.lfs.net";
 
-    public static AppMetadata Get()
+    public static AppMetadata Get(bool showDebugConsole = true)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var informationalVersion = assembly
@@ -43,7 +44,8 @@ public static class AppMetadataProvider
             IsOpenSource: true,
             ProjectType: DefaultProjectType,
             DataSourceName: DefaultDataSourceName,
-            DataSourceUrl: DefaultDataSourceUrl);
+                DataSourceUrl: DefaultDataSourceUrl,
+                ShowDebugConsole: showDebugConsole);
     }
 
     private static string? GetAssemblyMetadataValue(Assembly assembly, string key)
