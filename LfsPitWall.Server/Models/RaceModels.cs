@@ -1,3 +1,5 @@
+using LfsPitWall.Server.Models.Archive;
+
 namespace LfsPitWall.Server.Models;
 
 /// <summary>
@@ -187,6 +189,45 @@ public class LapData
     }
 }
 
+public enum OfficialResultKind
+{
+    Qualifying = 1,
+    Race = 2
+}
+
+public class OfficialResult
+{
+    public OfficialResultKind Kind { get; set; }
+    public uint TotalTimeMs { get; set; }
+    public uint BestLapTimeMs { get; set; }
+    public byte NumStops { get; set; }
+    public ushort LapsDone { get; set; }
+    public ushort Flags { get; set; }
+    public byte ConfirmFlags { get; set; }
+    public byte ResultNum { get; set; }
+    public byte NumRes { get; set; }
+    public ushort PenaltySeconds { get; set; }
+    public int PositionPoints { get; set; }
+    public int PolePositionBonusPoints { get; set; }
+    public int FastestLapBonusPoints { get; set; }
+    public int HighestClimberBonusPoints { get; set; }
+
+    public int BonusPoints => PolePositionBonusPoints + FastestLapBonusPoints + HighestClimberBonusPoints;
+
+    public int TotalPoints => PositionPoints + BonusPoints;
+
+    public int? Position => ResultNum == byte.MaxValue ? null : ResultNum + 1;
+}
+
+public class OfficialResultIndexEntry
+{
+    public string Username { get; set; } = "";
+    public string DriverName { get; set; } = "";
+    public string CarName { get; set; } = "";
+    public byte? PlayerId { get; set; }
+    public OfficialResult Result { get; set; } = new();
+}
+
 /// <summary>
 /// Represents a driver in the current session
 /// </summary>
@@ -358,6 +399,11 @@ public class Driver
     public Dictionary<int, uint> PersonalBestSectors { get; set; } = new();
 
     /// <summary>
+    /// Official result confirmed by LFS for the current session, when available.
+    /// </summary>
+    public OfficialResult? OfficialResult { get; private set; }
+
+    /// <summary>
     /// Sector times recorded for the current in-progress lap.
     /// </summary>
     public Dictionary<int, SectorTime> CurrentLapSectors { get; } = new();
@@ -501,6 +547,11 @@ public class Driver
     public void UpdatePitStops(uint pitStops)
     {
         PitStops = pitStops;
+    }
+
+    public void SetOfficialResult(OfficialResult officialResult)
+    {
+        OfficialResult = officialResult;
     }
 
     public void UpdatePitLaneState(PitLaneFact fact, DateTime occurredAtUtc)
@@ -676,9 +727,15 @@ public class RaceSession
     private readonly Dictionary<byte, string> _usernames = new(); // UCID -> UName mapping
     private readonly List<ChatMessageEntry> _chatMessages = new();
     private readonly Dictionary<int, TrackMapNodeSample> _trackMapNodes = new();
+    private readonly Dictionary<string, OfficialResultIndexEntry> _officialResultsByUsername = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<byte, int> _raceStartPositionsByPlayerId = new();
+    private readonly Dictionary<string, int> _raceStartPositionsByUsername = new(StringComparer.OrdinalIgnoreCase);
     private uint _trackMapRevision;
     private uint _trackMapSortOrder;
     private const int MaxChatMessages = 80;
+
+    public string SessionId { get; private set; } = CreateSessionId();
+    public DateTime SessionStartedAtUtc { get; private set; } = DateTime.UtcNow;
 
     /// <summary>
     /// Track name
@@ -953,6 +1010,21 @@ public class RaceSession
         lock (_playersLock)
         {
             Players[driver.PlayerId] = driver;
+
+            if (!string.IsNullOrWhiteSpace(driver.Username)
+                && _officialResultsByUsername.TryGetValue(driver.Username, out var officialResultEntry))
+            {
+                officialResultEntry.PlayerId = driver.PlayerId;
+                officialResultEntry.DriverName = driver.Name;
+                officialResultEntry.CarName = driver.CarName;
+                driver.SetOfficialResult(officialResultEntry.Result);
+            }
+
+            if (!string.IsNullOrWhiteSpace(driver.Username)
+                && _raceStartPositionsByPlayerId.TryGetValue(driver.PlayerId, out var startPosition))
+            {
+                _raceStartPositionsByUsername[driver.Username] = startPosition;
+            }
         }
     }
 
@@ -963,7 +1035,11 @@ public class RaceSession
     {
         lock (_playersLock)
         {
-            Players.Remove(playerId);
+            if (Players.TryGetValue(playerId, out var driver))
+            {
+                PersistOfficialResult(driver);
+                Players.Remove(playerId);
+            }
         }
     }
 
@@ -981,7 +1057,140 @@ public class RaceSession
 
             foreach (var playerId in playerIdsToRemove)
             {
+                if (Players.TryGetValue(playerId, out var driver))
+                {
+                    PersistOfficialResult(driver);
+                }
+
                 Players.Remove(playerId);
+            }
+        }
+    }
+
+    public void ApplyOfficialResult(byte playerId, string username, string driverName, string carName, OfficialResult officialResult)
+    {
+        lock (_playersLock)
+        {
+            Driver? driver = null;
+
+            if (playerId != 0)
+            {
+                Players.TryGetValue(playerId, out driver);
+            }
+
+            if (driver == null && !string.IsNullOrWhiteSpace(username))
+            {
+                driver = Players.Values.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Username, username, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (driver != null)
+            {
+                driverName = string.IsNullOrWhiteSpace(driver.Name) ? driverName : driver.Name;
+                carName = string.IsNullOrWhiteSpace(driver.CarName) ? carName : driver.CarName;
+                playerId = driver.PlayerId;
+                driver.SetOfficialResult(officialResult);
+            }
+
+            if (!string.IsNullOrWhiteSpace(username))
+            {
+                _officialResultsByUsername[username] = new OfficialResultIndexEntry
+                {
+                    Username = username,
+                    DriverName = driverName,
+                    CarName = carName,
+                    PlayerId = playerId == 0 ? null : playerId,
+                    Result = officialResult
+                };
+            }
+        }
+    }
+
+    public void UpdateRaceStartOrder(IReadOnlyList<byte> orderedPlayerIds)
+    {
+        lock (_playersLock)
+        {
+            _raceStartPositionsByPlayerId.Clear();
+            _raceStartPositionsByUsername.Clear();
+
+            for (var index = 0; index < orderedPlayerIds.Count; index++)
+            {
+                var playerId = orderedPlayerIds[index];
+                if (playerId == 0)
+                {
+                    continue;
+                }
+
+                var gridPosition = index + 1;
+                _raceStartPositionsByPlayerId[playerId] = gridPosition;
+
+                if (Players.TryGetValue(playerId, out var driver) && !string.IsNullOrWhiteSpace(driver.Username))
+                {
+                    _raceStartPositionsByUsername[driver.Username] = gridPosition;
+                }
+            }
+        }
+    }
+
+    public void RecalculateOfficialResultBonuses(int polePositionBonusPoints, int fastestLapBonusPoints, int highestClimberBonusPoints)
+    {
+        lock (_playersLock)
+        {
+            foreach (var officialResult in _officialResultsByUsername.Values.Select(entry => entry.Result))
+            {
+                officialResult.PolePositionBonusPoints = 0;
+                officialResult.FastestLapBonusPoints = 0;
+                officialResult.HighestClimberBonusPoints = 0;
+            }
+
+            var raceResults = _officialResultsByUsername
+                .Where(pair => pair.Value.Result.Kind == OfficialResultKind.Race)
+                .Select(pair => new { Username = pair.Key, Entry = pair.Value, Result = pair.Value.Result })
+                .ToList();
+
+            foreach (var poleSitter in raceResults.Where(entry => ResolveRaceStartPosition(entry.Username, entry.Entry) == 1))
+            {
+                poleSitter.Result.PolePositionBonusPoints = polePositionBonusPoints;
+            }
+
+            var fastestLapTimeMs = raceResults
+                .Where(entry => entry.Result.Position.HasValue && entry.Result.BestLapTimeMs > 0)
+                .Select(entry => (uint?)entry.Result.BestLapTimeMs)
+                .Min();
+
+            if (fastestLapTimeMs.HasValue)
+            {
+                foreach (var entry in raceResults.Where(entry => entry.Result.Position.HasValue && entry.Result.BestLapTimeMs == fastestLapTimeMs.Value))
+                {
+                    entry.Result.FastestLapBonusPoints = fastestLapBonusPoints;
+                }
+            }
+
+            var climberResults = raceResults
+                .Select(entry => new
+                {
+                    entry.Result,
+                    StartingPosition = ResolveRaceStartPosition(entry.Username, entry.Entry),
+                    FinishPosition = entry.Result.Position
+                })
+                .Where(entry => entry.StartingPosition.HasValue && entry.FinishPosition.HasValue)
+                .Select(entry => new
+                {
+                    entry.Result,
+                    PlacesGained = entry.StartingPosition!.Value - entry.FinishPosition!.Value
+                })
+                .Where(entry => entry.PlacesGained > 0)
+                .ToList();
+
+            if (climberResults.Count == 0)
+            {
+                return;
+            }
+
+            var highestGain = climberResults.Max(entry => entry.PlacesGained);
+            foreach (var climber in climberResults.Where(entry => entry.PlacesGained == highestGain))
+            {
+                climber.Result.HighestClimberBonusPoints = highestClimberBonusPoints;
             }
         }
     }
@@ -1143,6 +1352,8 @@ public class RaceSession
             TrackName = "Unknown";
             HostName = string.Empty;
             HostNameHtml = string.Empty;
+            SessionId = CreateSessionId();
+            SessionStartedAtUtc = DateTime.UtcNow;
             SessionType = 0;
             WeatherType = 0;
             WindType = 0;
@@ -1161,11 +1372,269 @@ public class RaceSession
             _usernames.Clear();
             _chatMessages.Clear();
             _trackMapNodes.Clear();
+            _officialResultsByUsername.Clear();
+            _raceStartPositionsByPlayerId.Clear();
+            _raceStartPositionsByUsername.Clear();
             _trackMapSortOrder = 0;
             _trackMapRevision = 0;
             Players.Clear();
         }
     }
+
+    private void PersistOfficialResult(Driver driver)
+    {
+        if (driver.OfficialResult == null || string.IsNullOrWhiteSpace(driver.Username))
+        {
+            return;
+        }
+
+        _officialResultsByUsername[driver.Username] = new OfficialResultIndexEntry
+        {
+            Username = driver.Username,
+            DriverName = driver.Name,
+            CarName = driver.CarName,
+            PlayerId = driver.PlayerId,
+            Result = driver.OfficialResult
+        };
+    }
+
+    private int? ResolveRaceStartPosition(string username, OfficialResultIndexEntry officialResultEntry)
+    {
+        if (!string.IsNullOrWhiteSpace(username)
+            && _raceStartPositionsByUsername.TryGetValue(username, out var usernamePosition))
+        {
+            return usernamePosition;
+        }
+
+        if (officialResultEntry.PlayerId.HasValue
+            && _raceStartPositionsByPlayerId.TryGetValue(officialResultEntry.PlayerId.Value, out var playerPosition))
+        {
+            return playerPosition;
+        }
+
+        return null;
+    }
+
+    public SessionArchiveSnapshot CreateArchiveSnapshot()
+    {
+        lock (_playersLock)
+        {
+            var trackMap = _trackMapNodes.Values
+                .OrderBy(sample => sample.SortOrder)
+                .Select(sample => sample.ToPoint())
+                .ToList();
+
+            var sessionBestSectorInfos = GetSessionBestSectorInfos();
+            var snapshot = new SessionArchiveSnapshot
+            {
+                SessionId = SessionId,
+                SessionStartedAtUtc = SessionStartedAtUtc,
+                CapturedAtUtc = DateTime.UtcNow,
+                SessionType = GetSessionTypeString(),
+                SessionTypeId = SessionType,
+                TrackName = TrackName,
+                HostName = HostName,
+                HostNameHtml = HostNameHtml,
+                WeatherType = GetWeatherTypeString(),
+                WeatherTypeId = WeatherType,
+                WindType = GetWindTypeString(),
+                WindTypeId = WindType,
+                RaceFlag = RaceFlag,
+                RaceInProgress = RaceInProgress,
+                SessionTimeMs = SessionTimeMs,
+                MaxRaceLaps = MaxRaceLaps,
+                QualifyingMins = QualifyingMins,
+                ActiveSectorCount = ActiveSectorCount,
+                ChatRevision = ChatRevision,
+                SessionBestLap = SessionBestLap == null
+                    ? null
+                    : new ArchiveBestLapSnapshot
+                    {
+                        LapTimeMs = SessionBestLap.LapTimeMs,
+                        LapNumber = SessionBestLapNumber,
+                        AuthorName = SessionBestLapAuthorNameHtml,
+                        AuthorUsername = SessionBestLapAuthorUsername
+                    },
+                SessionBestSectors = sessionBestSectorInfos
+                    .Select(pair => new ArchiveBestSectorSnapshot
+                    {
+                        SectorNumber = pair.Key,
+                        TimeMs = pair.Value.TimeMs,
+                        AuthorName = pair.Value.AuthorNameHtml,
+                        AuthorUsername = pair.Value.AuthorUsername
+                    })
+                    .OrderBy(sector => sector.SectorNumber)
+                    .ToList(),
+                TrackMap = new ArchiveTrackMapSnapshot
+                {
+                    Revision = _trackMapRevision,
+                    MinX = trackMap.Count == 0 ? 0 : trackMap.Min(point => point.X),
+                    MaxX = trackMap.Count == 0 ? 0 : trackMap.Max(point => point.X),
+                    MinY = trackMap.Count == 0 ? 0 : trackMap.Min(point => point.Y),
+                    MaxY = trackMap.Count == 0 ? 0 : trackMap.Max(point => point.Y),
+                    Points = trackMap.Select(point => new ArchiveTrackMapPointSnapshot
+                    {
+                        Node = point.Node,
+                        X = point.X,
+                        Y = point.Y
+                    }).ToList()
+                },
+                ChatMessages = _chatMessages.Select(message => new ArchiveChatMessageSnapshot
+                {
+                    Kind = message.Kind,
+                    MessageText = message.MessageText,
+                    MessageLfsText = message.MessageLfsText,
+                    ReceivedAtUtc = message.ReceivedAtUtc
+                }).ToList()
+            };
+
+            snapshot.Drivers = Players.Values
+                .OrderBy(driver => driver.CurrentRacePosition > 0 ? 0 : 1)
+                .ThenBy(driver => driver.CurrentRacePosition == 0 ? byte.MaxValue : driver.CurrentRacePosition)
+                .ThenBy(driver => driver.Name)
+                .Select(driver => new ArchiveDriverSnapshot
+                {
+                    PlayerId = driver.PlayerId,
+                    ConnectionId = driver.ConnectionId,
+                    Name = driver.Name,
+                    NameHtml = driver.NameHtml,
+                    Username = driver.Username,
+                    CarName = driver.CarName,
+                    SkinName = driver.SkinName,
+                    DriverColor = driver.DriverColor,
+                    TyreTypes = driver.TyreTypes.ToArray(),
+                    FuelPercent = driver.FuelPercent,
+                    PitStops = driver.PitStops,
+                    IsInPitLane = driver.IsInPitLane,
+                    IsPitStopActive = driver.IsPitStopActive,
+                    PitStatus = driver.GetPitStatus(),
+                    LastPitStopTimeMs = driver.LastPitStopTimeMs,
+                    LastPitLaneTimeMs = driver.LastPitLaneTimeMs,
+                    LastPitStopFuelAddPercent = driver.LastPitStopFuelAddPercent,
+                    LastPitTyresChanged = driver.LastPitTyresChanged.ToArray(),
+                    LapsCompleted = driver.LapsCompleted,
+                    CurrentRacePosition = driver.CurrentRacePosition,
+                    CurrentTrackNode = driver.CurrentTrackNode,
+                    CurrentTrackLap = driver.CurrentTrackLap,
+                    HasWorldPosition = driver.HasWorldPosition,
+                    WorldX = driver.WorldX,
+                    WorldY = driver.WorldY,
+                    CurrentHeading = driver.CurrentHeading,
+                    TopSpeedKmh = driver.TopSpeedKmh,
+                    PersonalBestSectors = driver.PersonalBestSectors
+                        .Select(pair => new ArchiveSectorSnapshot
+                        {
+                            SectorNumber = pair.Key,
+                            TimeMs = pair.Value,
+                            IsValid = true
+                        })
+                        .OrderBy(sector => sector.SectorNumber)
+                        .ToList(),
+                    CurrentSectorProgress = driver.GetCurrentSectorProgress()
+                        .Select(pair => new ArchiveSectorSnapshot
+                        {
+                            SectorNumber = pair.Key,
+                            TimeMs = pair.Value.TimeMs,
+                            IsValid = pair.Value.IsValid
+                        })
+                        .OrderBy(sector => sector.SectorNumber)
+                        .ToList(),
+                    PersonalBestLap = driver.PersonalBestLap == null ? null : CloneLap(driver.PersonalBestLap),
+                    OfficialResult = CreateArchiveOfficialResult(driver.Username),
+                    RaceStartPosition = ResolveDriverRaceStartPosition(driver),
+                    LapHistory = driver.LapHistory.Select(CloneLap).ToList()
+                })
+                .ToList();
+
+            snapshot.OfficialResults = _officialResultsByUsername.Values
+                .Select(CreateArchiveOfficialResult)
+                .Where(result => result != null)
+                .Cast<ArchiveOfficialResultEntry>()
+                .OrderBy(result => result.FinishPosition ?? int.MaxValue)
+                .ThenBy(result => result.Username)
+                .ToList();
+
+            return snapshot;
+        }
+    }
+
+    private static ArchiveLapSnapshot CloneLap(LapData lap)
+    {
+        return new ArchiveLapSnapshot
+        {
+            LapNumber = lap.LapNumber,
+            LapTimeMs = lap.LapTimeMs,
+            ElapsedTimeMs = lap.ElapsedTimeMs,
+            IsValid = lap.IsValid,
+            PitStops = lap.PitStops,
+            PenaltyMs = lap.PenaltyMs,
+            Gear = lap.Gear,
+            RecordedAtUtc = lap.RecordedAt,
+            Sectors = lap.Sectors.Values
+                .Select(sector => new ArchiveSectorSnapshot
+                {
+                    SectorNumber = sector.SectorNumber,
+                    TimeMs = sector.TimeMs,
+                    IsValid = sector.IsValid
+                })
+                .OrderBy(sector => sector.SectorNumber)
+                .ToList()
+        };
+    }
+
+    private ArchiveOfficialResultEntry? CreateArchiveOfficialResult(string username)
+    {
+        return _officialResultsByUsername.TryGetValue(username, out var officialResultEntry)
+            ? CreateArchiveOfficialResult(officialResultEntry)
+            : null;
+    }
+
+    private ArchiveOfficialResultEntry CreateArchiveOfficialResult(OfficialResultIndexEntry officialResultEntry)
+    {
+        return new ArchiveOfficialResultEntry
+        {
+            Username = officialResultEntry.Username,
+            DriverName = officialResultEntry.DriverName,
+            CarName = officialResultEntry.CarName,
+            PlayerId = officialResultEntry.PlayerId,
+            Kind = officialResultEntry.Result.Kind.ToString(),
+            TotalTimeMs = officialResultEntry.Result.TotalTimeMs,
+            BestLapTimeMs = officialResultEntry.Result.BestLapTimeMs,
+            NumStops = officialResultEntry.Result.NumStops,
+            LapsDone = officialResultEntry.Result.LapsDone,
+            Flags = officialResultEntry.Result.Flags,
+            ConfirmFlags = officialResultEntry.Result.ConfirmFlags,
+            ResultNum = officialResultEntry.Result.ResultNum,
+            NumRes = officialResultEntry.Result.NumRes,
+            PenaltySeconds = officialResultEntry.Result.PenaltySeconds,
+            StartPosition = ResolveRaceStartPosition(officialResultEntry.Username, officialResultEntry),
+            FinishPosition = officialResultEntry.Result.Position,
+            Points = new ArchiveOfficialPointsBreakdown
+            {
+                PositionPoints = officialResultEntry.Result.PositionPoints,
+                PolePositionBonusPoints = officialResultEntry.Result.PolePositionBonusPoints,
+                FastestLapBonusPoints = officialResultEntry.Result.FastestLapBonusPoints,
+                HighestClimberBonusPoints = officialResultEntry.Result.HighestClimberBonusPoints,
+                BonusPoints = officialResultEntry.Result.BonusPoints,
+                TotalPoints = officialResultEntry.Result.TotalPoints
+            }
+        };
+    }
+
+    private int? ResolveDriverRaceStartPosition(Driver driver)
+    {
+        if (!string.IsNullOrWhiteSpace(driver.Username)
+            && _raceStartPositionsByUsername.TryGetValue(driver.Username, out var usernamePosition))
+        {
+            return usernamePosition;
+        }
+
+        return _raceStartPositionsByPlayerId.TryGetValue(driver.PlayerId, out var playerPosition)
+            ? playerPosition
+            : null;
+    }
+
+    private static string CreateSessionId() => $"session-{Guid.NewGuid():N}";
 
     /// <summary>
     /// Gets session type as string

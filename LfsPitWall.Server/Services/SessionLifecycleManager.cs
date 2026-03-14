@@ -1,4 +1,5 @@
 using LfsPitWall.Server.Models;
+using LfsPitWall.Server.Models.Archive;
 
 namespace LfsPitWall.Server.Services;
 
@@ -6,12 +7,16 @@ public sealed class SessionLifecycleManager
 {
     private readonly object _sync = new();
     private readonly RaceSession _raceSession;
+    private readonly SessionArchiveWriter _sessionArchiveWriter;
+    private readonly ArchiveOptions _archiveOptions;
     private readonly ILogger<SessionLifecycleManager> _logger;
     private ObservedRaceSession? _activeSession;
 
-    public SessionLifecycleManager(RaceSession raceSession, ILogger<SessionLifecycleManager> logger)
+    public SessionLifecycleManager(RaceSession raceSession, SessionArchiveWriter sessionArchiveWriter, Microsoft.Extensions.Options.IOptions<ArchiveOptions> archiveOptions, ILogger<SessionLifecycleManager> logger)
     {
         _raceSession = raceSession;
+        _sessionArchiveWriter = sessionArchiveWriter;
+        _archiveOptions = archiveOptions.Value;
         _logger = logger;
     }
 
@@ -36,6 +41,11 @@ public sealed class SessionLifecycleManager
                 "New {SessionKind} session detected on {Track}. Clearing live session state.",
                 nextSession.SessionKind,
                 nextSession.TrackName);
+
+            if (_archiveOptions.Enabled && _archiveOptions.WriteOnSessionTransition)
+            {
+                _sessionArchiveWriter.ArchiveCurrentSessionIfNeeded("session-transition");
+            }
 
             _raceSession.Reset();
             _activeSession = nextSession;

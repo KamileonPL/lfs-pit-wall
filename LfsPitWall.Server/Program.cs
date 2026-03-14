@@ -1,6 +1,7 @@
 using LfsPitWall.Server.Hubs;
 using LfsPitWall.Server.Helpers;
 using LfsPitWall.Server.Models;
+using LfsPitWall.Server.Models.Archive;
 using LfsPitWall.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,7 @@ var appMetadata = AppMetadataProvider.Get(showDebugConsole);
 
 // Add race session singleton
 builder.Services.AddSingleton<RaceSession>();
+builder.Services.AddSingleton<SessionArchiveWriter>();
 builder.Services.AddSingleton<SessionLifecycleManager>();
 
 // Add CORS
@@ -37,6 +39,18 @@ builder.Services
 builder.Services
     .AddOptions<PlayerOnboardingOptions>()
     .Bind(builder.Configuration.GetSection(PlayerOnboardingOptions.SectionName));
+
+builder.Services
+    .AddOptions<ChampionshipScoringOptions>()
+    .Bind(builder.Configuration.GetSection(ChampionshipScoringOptions.SectionName))
+    .Validate(options => options.HasValidConfiguration(), "Championship scoring configuration must define at least one non-negative finishing score and non-negative bonuses.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<ArchiveOptions>()
+    .Bind(builder.Configuration.GetSection(ArchiveOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.RootPath), "Archive root path must not be empty.")
+    .ValidateOnStart();
 
 // Add InSim service
 builder.Services.AddHostedService<InSimService>();

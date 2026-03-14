@@ -117,6 +117,7 @@ public enum TinyPacketType : byte
     TINY_NCN = 13,     // Get NCN for all connections
     TINY_NPL = 14,     // Get all players
     TINY_RES = 15,     // Get all results
+    TINY_REO = 18,     // Get race order
     TINY_RST = 19,     // Get race start info
 }
 
@@ -583,24 +584,59 @@ public struct IS_CNL
 }
 
 /// <summary>
-/// Result packet - sent for race results or qualifying results
-/// Physical size: 76 bytes (Size = 19)
+/// Result packet - sent for race results or qualifying results.
+/// Physical size: 84 bytes (Size = 21).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct IS_RES
 {
-    public byte Size;                    // 19 (76 / 4)
+    public byte Size;                    // 21 (84 / 4)
     public byte Type;                    // ISP_RES
     public byte ReqI;                    // 0 unless reply to TINY_RES request
-    public byte PLID;                    // Player ID
+    public byte PLID;                    // Player ID (0 if player left before result was sent)
 
     [MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)]
-    public byte[] PName;                 // Player name
+    public byte[] UName;                 // Username
 
-    public byte Mode;                    // Mode (0=qualifying, 1=race)
-    public byte Gear;                    // Final gear
-    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
-    public byte[] Spare;                 // Spare bytes
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)]
+    public byte[] PName;                 // Nickname
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+    public byte[] Plate;                 // Number plate
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
+    public byte[] CName;                 // Skin prefix
+
+    public uint TTime;                   // Total time (ms) or session time in qualifying
+    public uint BTime;                   // Best lap (ms)
+
+    public byte SpA;                     // Spare
+    public byte NumStops;                // Number of pit stops
+    public byte Confirm;                 // Confirmation flags (CONF_x)
+    public byte SpB;                     // Spare
+
+    public ushort LapsDone;              // Laps completed
+    public ushort Flags;                 // Player flags (PIF_x)
+
+    public byte ResultNum;               // 0 = winner / 255 = not added to table
+    public byte NumRes;                  // Total number of results
+    public ushort PSeconds;              // Penalty seconds, already included in TTime
+}
+
+/// <summary>
+/// Reorder packet - current grid or restart order.
+/// Physical size: 52 bytes (Size = 13).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_REO
+{
+    public byte Size;                    // 13 (52 / 4)
+    public byte Type;                    // ISP_REO
+    public byte ReqI;                    // 0 unless reply to TINY_REO request
+    public byte NumP;                    // Number of players in order list
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 48)]
+    public byte[] PLID;                  // Ordered player ids
 }
 
 /// <summary>
