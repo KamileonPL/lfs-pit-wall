@@ -267,6 +267,18 @@ function syncLapHistoryHoverState() {
     setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
 }
 
+function getDriverRowFromEventTarget(target) {
+    if (target instanceof Element) {
+        return target.closest("tr[data-driver-id]");
+    }
+
+    if (target instanceof Node && target.parentElement) {
+        return target.parentElement.closest("tr[data-driver-id]");
+    }
+
+    return null;
+}
+
 function initializeTableHoverState() {
     const tableBody = document.getElementById("drivers-table");
     if (!tableBody || tableBody.dataset.hoverStateInitialized === "true") {
@@ -279,11 +291,21 @@ function initializeTableHoverState() {
         lastPointerClientX = event.clientX;
         lastPointerClientY = event.clientY;
 
-        const row = event.target.closest("tr[data-driver-id]");
+        const row = getDriverRowFromEventTarget(event.target);
         setHoveredDriverId(row?.dataset.driverId || null);
 
         const trigger = getLapHistoryTrigger(event.target);
         setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
+    });
+
+    tableBody.addEventListener("pointerdown", (event) => {
+        const row = getDriverRowFromEventTarget(event.target);
+        if (!row?.dataset.driverId) {
+            return;
+        }
+
+        event.preventDefault();
+        toggleSelectedDriverId(row.dataset.driverId);
     });
 
     tableBody.addEventListener("mouseleave", () => {

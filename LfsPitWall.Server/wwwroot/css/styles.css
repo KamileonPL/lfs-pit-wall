@@ -614,6 +614,10 @@ body {
     transition: background-color 0.2s ease;
 }
 
+.driver-row[data-driver-id] {
+    cursor: pointer;
+}
+
 .driver-row:hover {
     background: rgba(40, 40, 60, 0.8);
 }
