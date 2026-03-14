@@ -57,6 +57,7 @@ app.UseStaticFiles();
 app.MapHub<TimingHub>("/hubs/timing");
 
 app.MapGet("/api/app-meta", () => Results.Ok(appMetadata));
+app.MapGet("/setup-editor", () => Results.Redirect("/setup-editor.html"));
 
 // Default route to index.html
 app.MapFallbackToFile("index.html");

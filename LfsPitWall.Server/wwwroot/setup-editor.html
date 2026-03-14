@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LFS Pit Wall - Setup Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="min-h-screen p-4 sm:p-6">
+        <div class="max-w-7xl mx-auto">
+            <div class="mb-6">
+                <div class="app-header mb-4">
+                    <div class="app-header-brand">
+                        <img src="images/LFS_logo_plain.png" alt="LFS Logo" class="lfs-logo">
+                        <div>
+                            <h1 class="text-4xl font-bold mb-2">LFS Pit Wall</h1>
+                            <p class="text-gray-400">Setup Editor</p>
+                        </div>
+                    </div>
+                    <nav class="app-nav" aria-label="Primary navigation">
+                        <a class="app-nav-link" href="/">Live Timing</a>
+                        <a class="app-nav-link is-active" href="/setup-editor">Setup Editor</a>
+                    </nav>
+                    <div class="header-status-stack text-right">
+                        <div class="server-name-block" aria-label="Setup editor mode">
+                            <p class="server-name-label">Mode</p>
+                            <p class="server-name-value">Client-side Extra</p>
+                        </div>
+                        <p class="live-datetime-inline" aria-label="Current local date and time">
+                            <span id="live-local-time">--:--:--</span>
+                            <span class="live-datetime-separator">•</span>
+                            <span id="live-local-date">-- --- ----</span>
+                        </p>
+                        <a class="setup-tool-badge" href="https://www.lfs.net/files/setups" target="_blank" rel="noreferrer">Browse official LFS setups</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,2.2fr)_minmax(320px,1fr)] gap-6">
+                <div class="setup-main-column">
+                    <section class="session-info rounded-lg p-5 border setup-hero-card mb-6">
+                        <div class="setup-hero-grid">
+                            <div>
+                                <p class="setup-kicker">Experimental Extra</p>
+                                <h2 class="setup-hero-title">Decode, edit and save LFS setup files</h2>
+                                <p class="setup-hero-copy">This editor runs entirely in your browser to keep the VPS light. Load a <span class="setup-inline-code">.set</span> file, change the key parameters, save it back, or copy everything into an AI-friendly brief.</p>
+                            </div>
+                            <div class="setup-upload-panel">
+                                <label class="setup-upload-dropzone" for="setup-file-input">
+                                    <span class="setup-upload-label">Load setup file</span>
+                                    <span class="setup-upload-copy">Choose a <span class="setup-inline-code">.set</span> file from your disk</span>
+                                    <input id="setup-file-input" class="setup-file-input" type="file" accept=".set">
+                                </label>
+                                <div class="setup-file-meta">
+                                    <p class="setup-file-name" id="setup-file-name">No file loaded</p>
+                                    <p class="setup-file-status" id="setup-file-status">The editor keeps unknown bytes intact and only overwrites the parameters it understands.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setup-actions-row">
+                            <button type="button" class="setup-action-button" id="setup-save-button" disabled>Save edited .set</button>
+                            <button type="button" class="setup-action-button setup-action-button--secondary" id="setup-copy-ai-button" disabled>Copy all settings for AI</button>
+                            <button type="button" class="setup-action-button setup-action-button--ghost" id="setup-reset-button" disabled>Reset changes</button>
+                        </div>
+                        <div class="setup-summary-grid" id="setup-summary-grid">
+                            <div class="setup-summary-card">
+                                <p class="setup-summary-label">Format</p>
+                                <p class="setup-summary-value">-</p>
+                            </div>
+                            <div class="setup-summary-card">
+                                <p class="setup-summary-label">Internal Version</p>
+                                <p class="setup-summary-value">-</p>
+                            </div>
+                            <div class="setup-summary-card">
+                                <p class="setup-summary-label">Patch X Setup</p>
+                                <p class="setup-summary-value">-</p>
+                            </div>
+                            <div class="setup-summary-card">
+                                <p class="setup-summary-label">Known Parameters</p>
+                                <p class="setup-summary-value">-</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="session-info rounded-lg p-5 border mb-6">
+                        <div class="setup-section-header">
+                            <div>
+                                <p class="setup-section-kicker">Guided Editing</p>
+                                <h3 class="setup-section-title">Core setup parameters</h3>
+                            </div>
+                            <p class="setup-section-note">Compact row-by-row editing with sensible groups, faster scanning and less noise while you tune.</p>
+                        </div>
+                        <div id="setup-editor-groups" class="setup-groups"></div>
+                    </section>
+                </div>
+
+                <aside class="setup-side-column">
+                    <section class="session-info rounded-lg p-5 border mb-6">
+                        <div class="setup-section-header setup-section-header--stacked">
+                            <div>
+                                <p class="setup-section-kicker">AI Export</p>
+                                <h3 class="setup-section-title">Copy-ready brief</h3>
+                            </div>
+                            <p class="setup-section-note">One click gives you a structured summary designed for LLMs or sharing with another engineer.</p>
+                        </div>
+                        <textarea id="setup-ai-export" class="setup-ai-export" readonly placeholder="Load a setup file to generate the AI summary."></textarea>
+                    </section>
+
+                    <section class="session-info rounded-lg p-5 border">
+                        <div class="setup-section-header setup-section-header--stacked">
+                            <div>
+                                <p class="setup-section-kicker">Quick Guide</p>
+                                <h3 class="setup-section-title">What changes usually do</h3>
+                            </div>
+                        </div>
+                        <div class="setup-guide-list">
+                            <div class="setup-guide-item">
+                                <p class="setup-guide-title">More front grip</p>
+                                <p class="setup-guide-copy">Usually comes from softer front bar, more front camber, lower front tyre pressure or more front wing.</p>
+                            </div>
+                            <div class="setup-guide-item">
+                                <p class="setup-guide-title">More rear traction</p>
+                                <p class="setup-guide-copy">Often means softer rear bar, calmer diff locking, less aggressive rear damping or lower rear tyre pressure.</p>
+                            </div>
+                            <div class="setup-guide-item">
+                                <p class="setup-guide-title">Better braking stability</p>
+                                <p class="setup-guide-copy">Usually more front brake bias, less rear lock tendency and a setup that does not overload the rear axle.</p>
+                            </div>
+                            <div class="setup-guide-item">
+                                <p class="setup-guide-title">More top speed</p>
+                                <p class="setup-guide-copy">Usually lower wing, longer final drive and gearing, but watch acceleration and corner exit performance.</p>
+                            </div>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+
+            <footer class="app-footer mt-8">
+                <div class="app-footer-grid">
+                    <div>
+                        <p class="app-footer-title">LFS Pit Wall <span id="app-version">v0.2</span></p>
+                        <p class="app-footer-text">Created by Kamileon. Open-source live timing for <a class="app-footer-link" id="app-data-source-link" href="https://www.lfs.net" target="_blank" rel="noreferrer">Live for Speed</a>.</p>
+                        <p class="app-footer-text app-footer-meta">
+                            <span id="app-project-type">ASP.NET Core web app with an HTML/JavaScript frontend.</span>
+                        </p>
+                    </div>
+                    <div>
+                        <p class="app-footer-title">Project</p>
+                        <p class="app-footer-text">Source code is available on <a class="app-footer-link" href="https://github.com/KamileonPL/lfs-pit-wall" target="_blank" rel="noreferrer">GitHub</a>.</p>
+                    </div>
+                    <div>
+                        <p class="app-footer-title">Support And Contribute</p>
+                        <p class="app-footer-text">If something does not work, <a class="app-footer-link" href="https://github.com/KamileonPL/lfs-pit-wall/issues" target="_blank" rel="noreferrer">open an issue</a>, ask on <a class="app-footer-link" href="https://discord.gg/d68BEY6" target="_blank" rel="noreferrer">Discord</a>, or fix it and send a <a class="app-footer-link" href="https://github.com/KamileonPL/lfs-pit-wall/pulls" target="_blank" rel="noreferrer">Pull Request</a>.</p>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="js/setup-editor.js"></script>
+</body>
+</html>
