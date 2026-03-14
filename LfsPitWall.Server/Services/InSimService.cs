@@ -11,6 +11,10 @@ namespace LfsPitWall.Server.Services;
 public class InSimService : BackgroundService
 {
     private const uint QualifyingPlaceholderTimeMs = 3600000;
+    private const int CustomTrackMapBucketWorldSize = 10 * 65536;
+    private const int TrackMapClosureDistanceWorldSize = 18 * 65536;
+    private const uint TrackMapClosureCandidatePointCount = 10;
+    private const uint TrackMapClosureMinimumAssignedPoints = 24;
 
     private readonly ILogger<InSimService> _logger;
     private readonly RaceSession _raceSession;
@@ -23,6 +27,9 @@ public class InSimService : BackgroundService
 
     private InSimConnection? _connection;
     private PeriodicTimer? _keepAliveTimer;
+    private bool _useObservedSpatialTrackMapFallback;
+    private int _collapsedNodeTraceCount;
+    private byte? _referenceTrackMapPlayerId;
 
     private const int KeepAliveIntervalMs = 30000;
 
@@ -345,6 +352,12 @@ public class InSimService : BackgroundService
 
         var numCars = packet[3];
         var availableCars = Math.Min(numCars, (packet.Length - headerSize) / compCarSize);
+        var allowRelaxedTrackMapSampling = ShouldUseRelaxedTrackMapSampling();
+        var useSpatialTrackMapKeying = ShouldUseSpatialTrackMapKeying();
+        var contributedDrivers = 0;
+        var distinctNodes = new HashSet<ushort>();
+        byte? leadingPlayerId = null;
+        byte leadingRacePosition = byte.MaxValue;
 
         for (var index = 0; index < availableCars; index++)
         {
@@ -366,11 +379,133 @@ public class InSimService : BackgroundService
 
             driver.UpdateLiveTelemetry(car.Node, car.Lap, car.Position, car.X, car.Y, car.Heading, car.Speed);
 
-            if (driver.ShouldContributeToTrackMap())
+            if (driver.ShouldContributeToTrackMap(allowRelaxedTrackMapSampling))
             {
-                _raceSession.UpdateTrackMapNode(car.Node, car.X, car.Y);
+                if (car.Position > 0 && car.Position < leadingRacePosition)
+                {
+                    leadingRacePosition = car.Position;
+                    leadingPlayerId = car.PLID;
+                }
+
+                var trackMapKey = useSpatialTrackMapKeying
+                    ? BuildCustomTrackMapKey(car.X, car.Y)
+                    : car.Node;
+                var displayNode = useSpatialTrackMapKeying ? (ushort)0 : car.Node;
+                var isReferenceDriver = useSpatialTrackMapKeying && _referenceTrackMapPlayerId.HasValue && _referenceTrackMapPlayerId.Value == car.PLID;
+
+                if (useSpatialTrackMapKeying && isReferenceDriver && !_raceSession.HasTrackMapNode(trackMapKey))
+                {
+                    trackMapKey = _raceSession.TryFindTrackMapClosureKey(
+                        car.X,
+                        car.Y,
+                        TrackMapClosureDistanceWorldSize,
+                        TrackMapClosureMinimumAssignedPoints,
+                        TrackMapClosureCandidatePointCount) ?? trackMapKey;
+                }
+
+                if (useSpatialTrackMapKeying && !isReferenceDriver && !_raceSession.HasTrackMapNode(trackMapKey))
+                {
+                    contributedDrivers++;
+                    distinctNodes.Add(car.Node);
+                    continue;
+                }
+
+                _raceSession.UpdateTrackMapNode(
+                    trackMapKey,
+                    displayNode,
+                    car.X,
+                    car.Y,
+                    useInsertionOrder: isReferenceDriver,
+                    deferSortOrder: useSpatialTrackMapKeying);
+                contributedDrivers++;
+                distinctNodes.Add(car.Node);
             }
         }
+
+        if (ShouldActivateObservedSpatialFallback(useSpatialTrackMapKeying, contributedDrivers, distinctNodes.Count))
+        {
+            _useObservedSpatialTrackMapFallback = true;
+            _collapsedNodeTraceCount = 0;
+            _referenceTrackMapPlayerId = leadingPlayerId;
+            _raceSession.ClearTrackMap();
+            useSpatialTrackMapKeying = true;
+        }
+        else if (useSpatialTrackMapKeying && contributedDrivers > 0)
+        {
+            if (!_referenceTrackMapPlayerId.HasValue || (leadingPlayerId.HasValue && leadingRacePosition == 1))
+            {
+                _referenceTrackMapPlayerId = leadingPlayerId ?? _referenceTrackMapPlayerId;
+            }
+        }
+    }
+
+    private bool ShouldUseSpatialTrackMapKeying()
+    {
+        if (_useObservedSpatialTrackMapFallback)
+        {
+            return true;
+        }
+
+        if (_raceSession.ActiveSectorCount == 0)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int BuildCustomTrackMapKey(int x, int y)
+    {
+        var bucketX = (int)Math.Floor((double)x / CustomTrackMapBucketWorldSize);
+        var bucketY = (int)Math.Floor((double)y / CustomTrackMapBucketWorldSize);
+
+        return HashCode.Combine(bucketX, bucketY);
+    }
+
+    private bool ShouldUseRelaxedTrackMapSampling()
+    {
+        if (_raceSession.ActiveSectorCount == 0)
+        {
+            return true;
+        }
+
+        return IsLayoutCapableTrack(_raceSession.TrackName);
+    }
+
+    private static bool IsLayoutCapableTrack(string trackName)
+    {
+        if (string.IsNullOrWhiteSpace(trackName))
+        {
+            return false;
+        }
+
+        var normalizedTrackName = trackName.Trim().ToUpperInvariant();
+        return normalizedTrackName.StartsWith("AU", StringComparison.Ordinal)
+            || normalizedTrackName.EndsWith("X", StringComparison.Ordinal);
+    }
+
+    private bool ShouldActivateObservedSpatialFallback(bool useSpatialTrackMapKeying, int contributedDrivers, int distinctNodeCount)
+    {
+        if (useSpatialTrackMapKeying || contributedDrivers == 0)
+        {
+            _collapsedNodeTraceCount = 0;
+            return false;
+        }
+
+        if (!IsLayoutCapableTrack(_raceSession.TrackName))
+        {
+            _collapsedNodeTraceCount = 0;
+            return false;
+        }
+
+        if (distinctNodeCount > 1)
+        {
+            _collapsedNodeTraceCount = 0;
+            return false;
+        }
+
+        _collapsedNodeTraceCount++;
+        return _collapsedNodeTraceCount >= 3;
     }
 
     /// <summary>
@@ -382,6 +517,9 @@ public class InSimService : BackgroundService
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
         if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, trackName, StringComparison.OrdinalIgnoreCase))
         {
+            _useObservedSpatialTrackMapFallback = false;
+            _collapsedNodeTraceCount = 0;
+            _referenceTrackMapPlayerId = null;
             _raceSession.ClearTrackMap();
         }
 
@@ -739,6 +877,9 @@ public class InSimService : BackgroundService
 
         if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, normalizedTrackName, StringComparison.OrdinalIgnoreCase))
         {
+            _useObservedSpatialTrackMapFallback = false;
+            _collapsedNodeTraceCount = 0;
+            _referenceTrackMapPlayerId = null;
             _raceSession.ClearTrackMap();
         }
 

@@ -58,10 +58,12 @@ public class TimingPointSnapshot
 public class TrackMapNodeSample
 {
     private const int MaxStoredSamples = 41;
+    public const uint DeferredSortOrder = uint.MaxValue;
     private readonly List<TrackMapRawSample> _samples = new();
 
     public ushort Node { get; set; }
     public uint SampleCount { get; private set; }
+    public uint SortOrder { get; set; }
 
     public void AddSample(int x, int y)
     {
@@ -490,11 +492,10 @@ public class Driver
         return snapshotTimeUtc - LastLiveTelemetryAtUtc.Value <= maxTelemetryAge;
     }
 
-    public bool ShouldContributeToTrackMap()
+    public bool ShouldContributeToTrackMap(bool allowRelaxedSampling = false)
     {
         return HasWorldPosition
-            && !IsInPitLane
-            && !IsPitStopActive;
+            && (allowRelaxedSampling || (!IsInPitLane && !IsPitStopActive));
     }
 
     public void UpdatePitStops(uint pitStops)
@@ -674,8 +675,9 @@ public class RaceSession
     private readonly object _playersLock = new object(); // Thread-safe access
     private readonly Dictionary<byte, string> _usernames = new(); // UCID -> UName mapping
     private readonly List<ChatMessageEntry> _chatMessages = new();
-    private readonly Dictionary<ushort, TrackMapNodeSample> _trackMapNodes = new();
+    private readonly Dictionary<int, TrackMapNodeSample> _trackMapNodes = new();
     private uint _trackMapRevision;
+    private uint _trackMapSortOrder;
     private const int MaxChatMessages = 80;
 
     /// <summary>
@@ -1019,14 +1021,72 @@ public class RaceSession
         }
     }
 
-    public void UpdateTrackMapNode(ushort node, int x, int y)
+    public bool HasTrackMapNode(int key)
     {
         lock (_playersLock)
         {
-            if (!_trackMapNodes.TryGetValue(node, out var sample))
+            return _trackMapNodes.ContainsKey(key);
+        }
+    }
+
+    public int? TryFindTrackMapClosureKey(int x, int y, int maxDistanceWorld, uint minimumAssignedPoints, uint candidatePointCount)
+    {
+        lock (_playersLock)
+        {
+            if (_trackMapSortOrder < minimumAssignedPoints)
             {
-                sample = new TrackMapNodeSample { Node = node };
-                _trackMapNodes[node] = sample;
+                return null;
+            }
+
+            var maxDistanceSquared = (long)maxDistanceWorld * maxDistanceWorld;
+            int? bestKey = null;
+            long bestDistanceSquared = long.MaxValue;
+
+            foreach (var pair in _trackMapNodes)
+            {
+                var sample = pair.Value;
+                if (sample.SortOrder == TrackMapNodeSample.DeferredSortOrder || sample.SortOrder > candidatePointCount)
+                {
+                    continue;
+                }
+
+                var point = sample.ToPoint();
+                var deltaX = (long)point.X - x;
+                var deltaY = (long)point.Y - y;
+                var distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
+                if (distanceSquared > maxDistanceSquared || distanceSquared >= bestDistanceSquared)
+                {
+                    continue;
+                }
+
+                bestDistanceSquared = distanceSquared;
+                bestKey = pair.Key;
+            }
+
+            return bestKey;
+        }
+    }
+
+    public void UpdateTrackMapNode(int key, ushort displayNode, int x, int y, bool useInsertionOrder, bool deferSortOrder = false)
+    {
+        lock (_playersLock)
+        {
+            if (!_trackMapNodes.TryGetValue(key, out var sample))
+            {
+                sample = new TrackMapNodeSample
+                {
+                    Node = displayNode,
+                    SortOrder = useInsertionOrder
+                        ? ++_trackMapSortOrder
+                        : deferSortOrder
+                            ? TrackMapNodeSample.DeferredSortOrder
+                            : displayNode
+                };
+                _trackMapNodes[key] = sample;
+            }
+            else if (useInsertionOrder && sample.SortOrder == TrackMapNodeSample.DeferredSortOrder)
+            {
+                sample.SortOrder = ++_trackMapSortOrder;
             }
 
             sample.AddSample(x, y);
@@ -1039,7 +1099,7 @@ public class RaceSession
         lock (_playersLock)
         {
             var points = _trackMapNodes.Values
-                .OrderBy(sample => sample.Node)
+                .OrderBy(sample => sample.SortOrder)
                 .Select(sample => sample.ToPoint())
                 .ToList();
 
@@ -1068,6 +1128,7 @@ public class RaceSession
         lock (_playersLock)
         {
             _trackMapNodes.Clear();
+            _trackMapSortOrder = 0;
             _trackMapRevision++;
         }
     }
@@ -1100,6 +1161,7 @@ public class RaceSession
             _usernames.Clear();
             _chatMessages.Clear();
             _trackMapNodes.Clear();
+            _trackMapSortOrder = 0;
             _trackMapRevision = 0;
             Players.Clear();
         }

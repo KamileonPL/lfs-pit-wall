@@ -27,9 +27,9 @@ window.TrackMapController = (() => {
     const TRACK_MAP_VELOCITY_BLEND = 0.58;
     const TRACK_MAP_MIN_JUMP_LIMIT_WORLD = 60 * 65536;
     const TRACK_MAP_MAX_JUMP_RATIO = 0.12;
-    const TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD = 1600;
+    const TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD = 1200;
     const TRACK_MAP_MAX_SEGMENT_POINT_DISTANCE_WORLD = 12000;
-    const TRACK_MAP_LINE_SMOOTHING_PASSES = 2;
+    const TRACK_MAP_LINE_SMOOTHING_PASSES = 6;
 
     function getTrackMapElements() {
         if (trackMapElements?.canvas instanceof HTMLCanvasElement) {
@@ -528,7 +528,7 @@ window.TrackMapController = (() => {
 
         const minimumDistance = Math.max(
             TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD,
-            Math.min(TRACK_MAP_MAX_SEGMENT_POINT_DISTANCE_WORLD, medianDistance * 0.45)
+            Math.min(TRACK_MAP_MAX_SEGMENT_POINT_DISTANCE_WORLD, medianDistance * 0.35)
         );
         const simplifiedSegment = simplifyTrackSegment(segment, minimumDistance);
         const smoothedSegment = smoothTrackSegment(simplifiedSegment, TRACK_MAP_LINE_SMOOTHING_PASSES);
@@ -851,7 +851,7 @@ window.TrackMapController = (() => {
         }
 
         const viewBounds = getSmoothedTrackBounds(rawViewBounds);
-        if (!viewBounds || trackGeometry.segments.length === 0) {
+        if (!viewBounds || (trackGeometry.segments.length === 0 && drivers.length === 0)) {
             emptyState.style.display = "flex";
             return;
         }
@@ -872,22 +872,24 @@ window.TrackMapController = (() => {
             y: size.height - offsetY - ((Number(y) - viewBounds.minY) * scale)
         });
 
-        context.strokeStyle = "rgba(148, 163, 184, 0.32)";
-        context.lineWidth = 3;
-        context.lineJoin = "round";
-        context.lineCap = "round";
-        trackGeometry.segments.forEach((segment) => {
-            context.beginPath();
-            segment.forEach((point, index) => {
-                const canvasPoint = toCanvasPoint(point.x, point.y);
-                if (index === 0) {
-                    context.moveTo(canvasPoint.x, canvasPoint.y);
-                } else {
-                    context.lineTo(canvasPoint.x, canvasPoint.y);
-                }
+        if (trackGeometry.segments.length > 0) {
+            context.strokeStyle = "rgba(148, 163, 184, 0.32)";
+            context.lineWidth = 3;
+            context.lineJoin = "round";
+            context.lineCap = "round";
+            trackGeometry.segments.forEach((segment) => {
+                context.beginPath();
+                segment.forEach((point, index) => {
+                    const canvasPoint = toCanvasPoint(point.x, point.y);
+                    if (index === 0) {
+                        context.moveTo(canvasPoint.x, canvasPoint.y);
+                    } else {
+                        context.lineTo(canvasPoint.x, canvasPoint.y);
+                    }
+                });
+                context.stroke();
             });
-            context.stroke();
-        });
+        }
 
         const startPoint = trackGeometry.segments[0]?.[0];
         if (startPoint) {
