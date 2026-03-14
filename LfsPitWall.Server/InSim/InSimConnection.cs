@@ -41,6 +41,11 @@ public class InSimConnection : IAsyncDisposable
     public async Task SendAsync<T>(T packet, CancellationToken cancellationToken) where T : struct
     {
         var bytes = StructToBytes(packet);
+        await SendAsync(bytes, cancellationToken);
+    }
+
+    public async Task SendAsync(byte[] bytes, CancellationToken cancellationToken)
+    {
         await _stream!.WriteAsync(bytes, 0, bytes.Length, cancellationToken);
         await _stream.FlushAsync(cancellationToken);
     }

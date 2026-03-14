@@ -28,6 +28,10 @@ builder.Services
     .AddOptions<TelemetryOptions>()
     .Bind(builder.Configuration.GetSection(TelemetryOptions.SectionName));
 
+builder.Services
+    .AddOptions<PlayerOnboardingOptions>()
+    .Bind(builder.Configuration.GetSection(PlayerOnboardingOptions.SectionName));
+
 // Add InSim service
 builder.Services.AddHostedService<InSimService>();
 

@@ -1,6 +1,8 @@
 using LfsPitWall.Server.Helpers;
 using LfsPitWall.Server.InSim;
 using LfsPitWall.Server.Models;
+using Microsoft.Extensions.Options;
+using System.Text;
 
 namespace LfsPitWall.Server.Services;
 
@@ -15,6 +17,8 @@ public class InSimService : BackgroundService
     private const int TrackMapClosureDistanceWorldSize = 18 * 65536;
     private const uint TrackMapClosureCandidatePointCount = 10;
     private const uint TrackMapClosureMinimumAssignedPoints = 24;
+    private const byte MessageSoundSilent = 0;
+    private const byte MessageSoundSystem = 2;
 
     private readonly ILogger<InSimService> _logger;
     private readonly RaceSession _raceSession;
@@ -24,6 +28,7 @@ public class InSimService : BackgroundService
     private readonly int _port;
     private readonly string _adminPassword;
     private readonly string _insimName;
+    private readonly PlayerOnboardingOptions _playerOnboardingOptions;
 
     private InSimConnection? _connection;
     private PeriodicTimer? _keepAliveTimer;
@@ -33,7 +38,7 @@ public class InSimService : BackgroundService
 
     private const int KeepAliveIntervalMs = 30000;
 
-    public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession, SessionLifecycleManager sessionLifecycleManager)
+    public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession, SessionLifecycleManager sessionLifecycleManager, IOptions<PlayerOnboardingOptions> playerOnboardingOptions)
     {
         _logger = logger;
         _raceSession = raceSession;
@@ -42,6 +47,7 @@ public class InSimService : BackgroundService
         _port = int.TryParse(configuration["InSim:Port"], out var p) ? p : 29999;
         _adminPassword = configuration["InSim:AdminPassword"] ?? string.Empty;
         _insimName = configuration["InSim:Name"] ?? "LFS Pit Wall";
+        _playerOnboardingOptions = playerOnboardingOptions.Value;
 
         _dispatcher = new PacketDispatcher(_logger);
         RegisterHandlers();
@@ -834,6 +840,100 @@ public class InSimService : BackgroundService
         _logger.LogDebug(
             "🔗 New Connection: {UserName} ({NickName}) - UCID: {UCID}, Total: {Total}",
             userName, nickName, packet.UCID, packet.Total);
+
+        if (packet.ReqI == 0)
+        {
+            QueuePlayerOnboardingMessage(packet.UCID, userName, nickName);
+        }
+    }
+
+    private void QueuePlayerOnboardingMessage(byte connectionId, string userName, string nickName)
+    {
+        if (!_playerOnboardingOptions.Enabled || connectionId == 0 || _connection?.IsConnected != true)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var messages = BuildPlayerOnboardingMessages().ToList();
+                for (var index = 0; index < messages.Count; index++)
+                {
+                    await SendConnectionMessageAsync(
+                        connectionId,
+                        messages[index],
+                        CancellationToken.None,
+                        index == 0 ? MessageSoundSystem : MessageSoundSilent);
+                }
+
+                _logger.LogDebug(
+                    "Sent player onboarding message to UCID {UCID} ({UserName} / {NickName})",
+                    connectionId,
+                    userName,
+                    nickName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to send player onboarding message to UCID {UCID} ({UserName} / {NickName})",
+                    connectionId,
+                    userName,
+                    nickName);
+            }
+        });
+    }
+
+    private IEnumerable<string> BuildPlayerOnboardingMessages()
+    {
+        yield return "^3LIVE TIMING AVAILABLE ^8- ^7LFS Pit Wall by ^1Kamileon^8";
+        yield return "^7Open the website for ^1live timing^7, ^1stats^7 and ^1archived results^8.";
+
+        var publicUrl = _playerOnboardingOptions.GetNormalizedPublicUrl();
+        if (!string.IsNullOrEmpty(publicUrl))
+        {
+            yield return $"^5Website:^8 {publicUrl}";
+            yield break;
+        }
+    }
+
+    private async Task SendConnectionMessageAsync(byte connectionId, string message, CancellationToken cancellationToken, byte sound)
+    {
+        if (_connection?.IsConnected != true || string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        await _connection.SendAsync(BuildConnectionMessagePacket(connectionId, message, sound), cancellationToken);
+    }
+
+    private static byte[] BuildConnectionMessagePacket(byte connectionId, string message, byte sound)
+    {
+        var sanitizedMessage = (message ?? string.Empty)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        var messageBytes = Encoding.ASCII.GetBytes(sanitizedMessage);
+        var messageLength = Math.Min(messageBytes.Length, 127);
+        var textSize = ((messageLength + 1 + 3) / 4) * 4;
+        var packet = new byte[8 + textSize];
+
+        packet[0] = (byte)(packet.Length / 4);
+        packet[1] = (byte)InSimPacketType.ISP_MTC;
+        packet[2] = 0;
+        packet[3] = sound;
+        packet[4] = connectionId;
+        packet[5] = 0;
+        packet[6] = 0;
+        packet[7] = 0;
+
+        Array.Copy(messageBytes, 0, packet, 8, messageLength);
+        packet[8 + messageLength] = 0;
+
+        return packet;
     }
 
     /// <summary>
