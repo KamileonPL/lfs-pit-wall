@@ -1197,7 +1197,20 @@ function updateBestLaps(data) {
     }
 
     const sectorNumbers = getSectorNumbers(data);
+    const bestSectorsTitle = document.getElementById("best-sectors-title");
     const bestSectorsGrid = document.getElementById("best-sectors-grid");
+    const theoreticalBestSectorTimes = sectorNumbers.map((sectorNum) =>
+        data.sessionBestSectorInfos?.[sectorNum]?.timeMs ?? data.sessionBestSectors?.[sectorNum] ?? 0);
+    const theoreticalBestLapMs = theoreticalBestSectorTimes.length > 0 && theoreticalBestSectorTimes.every((sectorTime) => sectorTime > 0)
+        ? theoreticalBestSectorTimes.reduce((total, sectorTime) => total + sectorTime, 0)
+        : 0;
+
+    if (bestSectorsTitle) {
+        bestSectorsTitle.textContent = theoreticalBestLapMs > 0
+            ? `📊 Best Sectors (${formatTime(theoreticalBestLapMs)})`
+            : "📊 Best Sectors";
+    }
+
     bestSectorsGrid.className = `grid gap-2 ${sectorNumbers.length > 0 ? `grid-cols-${sectorNumbers.length}` : 'grid-cols-1'}`;
     bestSectorsGrid.innerHTML = sectorNumbers.length === 0
         ? `<p class="text-sm text-gray-500">No sector timing</p>`
