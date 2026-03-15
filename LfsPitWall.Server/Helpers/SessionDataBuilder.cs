@@ -1,4 +1,5 @@
 using LfsPitWall.Server.Models;
+using LfsPitWall.Server.Services;
 
 namespace LfsPitWall.Server.Helpers;
 
@@ -10,7 +11,7 @@ public static class SessionDataBuilder
 {
     private static readonly TimeSpan MapTelemetryFreshnessWindow = TimeSpan.FromSeconds(4);
 
-    public static object Build(RaceSession session)
+    public static object Build(RaceSession session, DriverProfileService? driverProfileService = null)
     {
         var snapshotTimeUtc = DateTime.UtcNow;
         var (authorNameHtml, authorUsername, bestLapNumber) = session.GetSessionBestLapInfo();
@@ -64,6 +65,7 @@ public static class SessionDataBuilder
             }).ToList(),
             players = orderedDrivers.Select((d, index) =>
             {
+                var driverProfileSummary = driverProfileService?.GetDriverSummary(d.Username) ?? DriverProfileSummary.Empty;
                 var personalBestLap = d.PersonalBestLap;
                 var currentLap = d.LapHistory.Count > 0 ? d.LapHistory[^1] : null;
                 uint? gapToPreviousMs = session.SessionType == 2 && index > 0
@@ -75,10 +77,14 @@ public static class SessionDataBuilder
                 {
                     playerId = d.PlayerId,
                     name = d.Name,
+                    username = d.Username,
                     mapLabelHtml = d.NameHtml,
                     nameHtml = string.IsNullOrEmpty(d.Username)
                         ? d.NameHtml
                         : $"{d.NameHtml} <span style=\"color:#AAAAAA\">({System.Net.WebUtility.HtmlEncode(d.Username)})</span>",
+                    countryName = driverProfileSummary.CountryName,
+                    countryCode = driverProfileSummary.CountryCode,
+                    driverProfilePending = driverProfileSummary.IsRefreshQueued,
                     carName = d.CarName,
                     driverColor = d.DriverColor,
                     currentRacePosition = d.CurrentRacePosition,

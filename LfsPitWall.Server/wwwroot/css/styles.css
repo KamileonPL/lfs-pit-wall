@@ -1882,11 +1882,11 @@ body {
 }
 
 .driver-row:hover {
-    background: rgba(40, 40, 60, 0.8);
+    background: rgba(30, 30, 45, 0.6);
 }
 
 .driver-row.is-hovered {
-    background: rgba(40, 40, 60, 0.8);
+    background: rgba(30, 30, 45, 0.6);
 }
 
 .driver-row.is-selected {
@@ -2019,6 +2019,239 @@ body {
     font-weight: 600;
     padding: 2px 4px;
     border-radius: 3px;
+}
+
+.driver-name--profile {
+    cursor: default;
+}
+
+.driver-profile-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+    padding: 2px 4px;
+    border-radius: 8px;
+}
+
+.driver-profile-trigger.is-enabled {
+    cursor: default;
+}
+
+.driver-profile-trigger.is-hovered,
+.driver-profile-trigger.is-active {
+    background: transparent;
+}
+
+.driver-profile-copy {
+    min-width: 0;
+}
+
+.driver-profile-name {
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.driver-flag-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 13px;
+    flex: 0 0 18px;
+    border-radius: 3px;
+    background: rgba(15, 23, 42, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18);
+    font-size: 0.95rem;
+    overflow: hidden;
+    transform: translateY(1px);
+}
+
+.driver-flag-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.92;
+}
+
+.driver-flag-badge.is-pending {
+    color: #94a3b8;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 0.46rem;
+    letter-spacing: 0.06em;
+}
+
+.driver-flag-badge.is-unknown {
+    position: relative;
+    background:
+        linear-gradient(135deg, rgba(148, 163, 184, 0.22), rgba(100, 116, 139, 0.22)),
+        repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0 3px, transparent 3px 6px);
+    border-color: rgba(148, 163, 184, 0.22);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
+}
+
+.driver-flag-badge.is-unknown::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.8);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18);
+}
+
+.driver-profile-tooltip {
+    position: fixed;
+    z-index: 1001;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(420px, calc(100vh - 24px));
+    overflow-y: auto;
+    padding: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 16px;
+    background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 36%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.98));
+    box-shadow: 0 22px 55px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(18px);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate3d(0, 6px, 0);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.driver-profile-tooltip.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translate3d(0, 0, 0);
+    pointer-events: auto;
+}
+
+.driver-profile-tooltip-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.driver-profile-tooltip-title {
+    color: #f8fafc;
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.driver-profile-tooltip-subtitle {
+    display: inline-block;
+    margin-top: 4px;
+    color: #94a3b8;
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+}
+
+.driver-profile-tooltip-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.12);
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    color: #dbeafe;
+    font-size: 0.74rem;
+    white-space: nowrap;
+}
+
+.driver-profile-tooltip-pill.is-unavailable {
+    background: rgba(148, 163, 184, 0.1);
+    border-color: rgba(148, 163, 184, 0.14);
+    color: #cbd5e1;
+}
+
+.driver-profile-tooltip-flag {
+    display: block;
+    width: 18px;
+    height: 13px;
+    border-radius: 3px;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.driver-profile-tooltip-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.driver-profile-stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.driver-profile-stat-label {
+    color: #94a3b8;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.driver-profile-stat-value {
+    color: #f8fafc;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.driver-profile-tooltip-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.driver-profile-tooltip-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #94a3b8;
+    font-size: 0.76rem;
+}
+
+.driver-profile-tooltip-meta-row strong {
+    color: #e5e7eb;
+    font-weight: 600;
+    text-align: right;
+}
+
+.driver-profile-tooltip-host {
+    display: inline-block;
+}
+
+.driver-profile-tooltip-host span {
+    font-weight: 700;
+}
+
+.driver-profile-tooltip-empty {
+    color: #94a3b8;
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+    .driver-profile-tooltip-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .lap-time-cell {

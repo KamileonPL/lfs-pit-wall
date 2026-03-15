@@ -1,5 +1,6 @@
 using LfsPitWall.Server.Helpers;
 using LfsPitWall.Server.Models;
+using LfsPitWall.Server.Services;
 using Microsoft.AspNetCore.SignalR;
 
 namespace LfsPitWall.Server.Hubs;
@@ -11,11 +12,13 @@ namespace LfsPitWall.Server.Hubs;
 public class TimingHub : Hub
 {
     private readonly RaceSession _raceSession;
+    private readonly DriverProfileService _driverProfileService;
     private readonly ILogger<TimingHub> _logger;
 
-    public TimingHub(RaceSession raceSession, ILogger<TimingHub> logger)
+    public TimingHub(RaceSession raceSession, DriverProfileService driverProfileService, ILogger<TimingHub> logger)
     {
         _raceSession = raceSession;
+        _driverProfileService = driverProfileService;
         _logger = logger;
     }
 
@@ -24,7 +27,7 @@ public class TimingHub : Hub
         _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
 
         // Send current state to the newly connected client immediately
-        var sessionData = SessionDataBuilder.Build(_raceSession);
+        var sessionData = SessionDataBuilder.Build(_raceSession, _driverProfileService);
         await Clients.Caller.SendAsync("ReceiveSessionUpdate", sessionData);
 
         await base.OnConnectedAsync();
@@ -43,8 +46,34 @@ public class TimingHub : Hub
     public async Task RequestFullUpdate()
     {
         _logger.LogDebug("Client {ConnectionId} requested full update", Context.ConnectionId);
-        var sessionData = SessionDataBuilder.Build(_raceSession);
+        var sessionData = SessionDataBuilder.Build(_raceSession, _driverProfileService);
         await Clients.Caller.SendAsync("ReceiveSessionUpdate", sessionData);
+    }
+
+    public Task<DriverProfileSnapshot> GetDriverProfile(byte playerId)
+    {
+        var driverIdentity = _raceSession.GetDriverSnapshot(playerId, driver => new
+        {
+            driver.PlayerId,
+            driver.Username,
+            driver.NameHtml,
+            driver.CarName
+        });
+
+        if (driverIdentity == null)
+        {
+            return Task.FromResult(new DriverProfileSnapshot
+            {
+                PlayerId = playerId,
+                UnavailableReason = "Driver is no longer present in the current session."
+            });
+        }
+
+        return Task.FromResult(_driverProfileService.GetDriverProfile(
+            driverIdentity.PlayerId,
+            driverIdentity.Username,
+            driverIdentity.NameHtml,
+            driverIdentity.CarName));
     }
 
     public Task<object> GetDriverLapHistory(byte playerId)
