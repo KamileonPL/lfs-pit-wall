@@ -139,6 +139,58 @@ It runs on every push to `main`, publishes self-contained production binaries fo
 
 Each target is uploaded as a separate GitHub Actions artifact.
 
+### GitHub Release For Users
+
+The repository also includes `.github/workflows/release.yml`.
+
+It runs only when you push a version tag such as `v0.3.1`.
+
+That workflow:
+
+- publishes the same three self-contained builds
+- packs them into ZIP files
+- creates a GitHub Release
+- attaches the ZIP files to that Release for easy user downloads
+
+### First Release Step By Step
+
+If you have never done this before, use the following flow.
+
+1. Make your code changes.
+2. Save all files.
+3. Commit and push your changes to `main`.
+4. Create a version tag.
+5. Push that tag to GitHub.
+
+Example for version `v0.3.1`:
+
+```bash
+git add .
+git commit -m "Release v0.3.1"
+git push origin main
+git tag v0.3.1
+git push origin v0.3.1
+```
+
+What each command does:
+
+- `git add .` prepares your changed files for commit
+- `git commit -m "Release v0.3.1"` creates a commit in your local repository
+- `git push origin main` sends that commit to GitHub and runs the publish workflow
+- `git tag v0.3.1` marks the current commit as version `v0.3.1`
+- `git push origin v0.3.1` sends the tag to GitHub and runs the release workflow
+
+Important:
+
+- use a new version number each time, for example `v0.3.2`, `v0.3.3`, and so on
+- the tag should usually match the version you want users to download
+- after pushing the tag, the new release will appear in the GitHub `Releases` section
+
+### Normal Push vs Release
+
+- `git push origin main` gives you GitHub Actions artifacts
+- `git push origin v0.3.1` gives you a public GitHub Release with ZIP files
+
 ### Standard Publish
 
 Windows:
