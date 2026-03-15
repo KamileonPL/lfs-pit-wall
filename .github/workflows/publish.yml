@@ -1,0 +1,50 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.rid }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid:
+          - win-x64
+          - linux-x64
+          - linux-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Publish
+        run: >-
+          dotnet publish ./LfsPitWall.Server/LfsPitWall.Server.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained true
+          -o ./artifacts/publish/${{ matrix.rid }}
+
+      - name: Pack artifact
+        run: |
+          cd ./artifacts/publish/${{ matrix.rid }}
+          zip -r ../LfsPitWall-${{ matrix.rid }}.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LfsPitWall-${{ matrix.rid }}
+          path: ./artifacts/publish/LfsPitWall-${{ matrix.rid }}.zip
+          if-no-files-found: error

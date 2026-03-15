@@ -127,6 +127,18 @@ Important:
 <details>
 <summary><strong>Production Publish</strong></summary>
 
+### GitHub Actions Publish
+
+The repository includes a minimal GitHub Actions workflow at `.github/workflows/publish.yml`.
+
+It runs on every push to `main`, publishes self-contained production binaries for:
+
+- `win-x64`
+- `linux-x64`
+- `linux-arm64`
+
+Each target is uploaded as a separate GitHub Actions artifact.
+
 ### Standard Publish
 
 Windows:
