@@ -131,7 +131,7 @@ Important:
 
 The repository includes a minimal GitHub Actions workflow at `.github/workflows/publish.yml`.
 
-It runs on every push to `main`, publishes self-contained production binaries for:
+It runs only when started manually from the GitHub `Actions` tab and publishes self-contained production binaries for:
 
 - `win-x64`
 - `linux-x64`
@@ -176,7 +176,7 @@ What each command does:
 
 - `git add .` prepares your changed files for commit
 - `git commit -m "Release v0.3.1"` creates a commit in your local repository
-- `git push origin main` sends that commit to GitHub and runs the publish workflow
+- `git push origin main` sends that commit to GitHub
 - `git tag v0.3.1` marks the current commit as version `v0.3.1`
 - `git push origin v0.3.1` sends the tag to GitHub and runs the release workflow
 
@@ -188,7 +188,7 @@ Important:
 
 ### Normal Push vs Release
 
-- `git push origin main` gives you GitHub Actions artifacts
+- manual run of `publish.yml` gives you GitHub Actions artifacts
 - `git push origin v0.3.1` gives you a public GitHub Release with ZIP files
 
 ### Standard Publish
