@@ -11,7 +11,7 @@ public sealed class SessionArchiveWriter
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
@@ -115,8 +115,6 @@ public sealed class SessionArchiveWriter
             Session = BuildSessionMetadata(snapshot),
             SessionBestLap = snapshot.SessionBestLap,
             SessionBestSectors = snapshot.SessionBestSectors,
-            TrackMap = snapshot.TrackMap,
-            ChatMessages = snapshot.ChatMessages,
             OfficialResults = snapshot.OfficialResults,
             Drivers = snapshot.Drivers
         };

@@ -1419,11 +1419,6 @@ public class RaceSession
     {
         lock (_playersLock)
         {
-            var trackMap = _trackMapNodes.Values
-                .OrderBy(sample => sample.SortOrder)
-                .Select(sample => sample.ToPoint())
-                .ToList();
-
             var sessionBestSectorInfos = GetSessionBestSectorInfos();
             var snapshot = new SessionArchiveSnapshot
             {
@@ -1445,7 +1440,6 @@ public class RaceSession
                 MaxRaceLaps = MaxRaceLaps,
                 QualifyingMins = QualifyingMins,
                 ActiveSectorCount = ActiveSectorCount,
-                ChatRevision = ChatRevision,
                 SessionBestLap = SessionBestLap == null
                     ? null
                     : new ArchiveBestLapSnapshot
@@ -1464,28 +1458,7 @@ public class RaceSession
                         AuthorUsername = pair.Value.AuthorUsername
                     })
                     .OrderBy(sector => sector.SectorNumber)
-                    .ToList(),
-                TrackMap = new ArchiveTrackMapSnapshot
-                {
-                    Revision = _trackMapRevision,
-                    MinX = trackMap.Count == 0 ? 0 : trackMap.Min(point => point.X),
-                    MaxX = trackMap.Count == 0 ? 0 : trackMap.Max(point => point.X),
-                    MinY = trackMap.Count == 0 ? 0 : trackMap.Min(point => point.Y),
-                    MaxY = trackMap.Count == 0 ? 0 : trackMap.Max(point => point.Y),
-                    Points = trackMap.Select(point => new ArchiveTrackMapPointSnapshot
-                    {
-                        Node = point.Node,
-                        X = point.X,
-                        Y = point.Y
-                    }).ToList()
-                },
-                ChatMessages = _chatMessages.Select(message => new ArchiveChatMessageSnapshot
-                {
-                    Kind = message.Kind,
-                    MessageText = message.MessageText,
-                    MessageLfsText = message.MessageLfsText,
-                    ReceivedAtUtc = message.ReceivedAtUtc
-                }).ToList()
+                    .ToList()
             };
 
             snapshot.Drivers = Players.Values
@@ -1495,31 +1468,13 @@ public class RaceSession
                 .Select(driver => new ArchiveDriverSnapshot
                 {
                     PlayerId = driver.PlayerId,
-                    ConnectionId = driver.ConnectionId,
                     Name = driver.Name,
-                    NameHtml = driver.NameHtml,
                     Username = driver.Username,
                     CarName = driver.CarName,
-                    SkinName = driver.SkinName,
                     DriverColor = driver.DriverColor,
-                    TyreTypes = driver.TyreTypes.ToArray(),
-                    FuelPercent = driver.FuelPercent,
                     PitStops = driver.PitStops,
-                    IsInPitLane = driver.IsInPitLane,
-                    IsPitStopActive = driver.IsPitStopActive,
-                    PitStatus = driver.GetPitStatus(),
-                    LastPitStopTimeMs = driver.LastPitStopTimeMs,
-                    LastPitLaneTimeMs = driver.LastPitLaneTimeMs,
-                    LastPitStopFuelAddPercent = driver.LastPitStopFuelAddPercent,
-                    LastPitTyresChanged = driver.LastPitTyresChanged.ToArray(),
                     LapsCompleted = driver.LapsCompleted,
                     CurrentRacePosition = driver.CurrentRacePosition,
-                    CurrentTrackNode = driver.CurrentTrackNode,
-                    CurrentTrackLap = driver.CurrentTrackLap,
-                    HasWorldPosition = driver.HasWorldPosition,
-                    WorldX = driver.WorldX,
-                    WorldY = driver.WorldY,
-                    CurrentHeading = driver.CurrentHeading,
                     TopSpeedKmh = driver.TopSpeedKmh,
                     PersonalBestSectors = driver.PersonalBestSectors
                         .Select(pair => new ArchiveSectorSnapshot
@@ -1530,17 +1485,7 @@ public class RaceSession
                         })
                         .OrderBy(sector => sector.SectorNumber)
                         .ToList(),
-                    CurrentSectorProgress = driver.GetCurrentSectorProgress()
-                        .Select(pair => new ArchiveSectorSnapshot
-                        {
-                            SectorNumber = pair.Key,
-                            TimeMs = pair.Value.TimeMs,
-                            IsValid = pair.Value.IsValid
-                        })
-                        .OrderBy(sector => sector.SectorNumber)
-                        .ToList(),
                     PersonalBestLap = driver.PersonalBestLap == null ? null : CloneLap(driver.PersonalBestLap),
-                    OfficialResult = CreateArchiveOfficialResult(driver.Username),
                     RaceStartPosition = ResolveDriverRaceStartPosition(driver),
                     LapHistory = driver.LapHistory.Select(CloneLap).ToList()
                 })
