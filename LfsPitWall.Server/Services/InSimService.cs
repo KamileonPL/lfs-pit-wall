@@ -39,8 +39,10 @@ public class InSimService : BackgroundService
     private bool _useObservedSpatialTrackMapFallback;
     private int _collapsedNodeTraceCount;
     private byte? _referenceTrackMapPlayerId;
+    private DateTime _lastOfficialResultsRequestUtc = DateTime.MinValue;
 
     private const int KeepAliveIntervalMs = 30000;
+    private static readonly TimeSpan OfficialResultsRequestThrottle = TimeSpan.FromSeconds(2);
 
     public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession, SessionLifecycleManager sessionLifecycleManager, IOptions<PlayerOnboardingOptions> playerOnboardingOptions, IOptions<ChampionshipScoringOptions> championshipScoringOptions, SessionArchiveWriter sessionArchiveWriter, IOptions<ArchiveOptions> archiveOptions)
     {
@@ -66,6 +68,7 @@ public class InSimService : BackgroundService
     {
         // Core session management
         _dispatcher.Bind<IS_ISM>(InSimPacketType.ISP_ISM, HandleMultiplayerInfo);
+        _dispatcher.Bind<IS_TINY>(InSimPacketType.ISP_TINY, HandleTiny);
         _dispatcher.BindRaw(InSimPacketType.ISP_MSO, HandleMessageOut);
         _dispatcher.Bind<IS_STA>(InSimPacketType.ISP_STA, HandleSessionState);
         _dispatcher.Bind<IS_RST>(InSimPacketType.ISP_RST, HandleRaceStart);
@@ -82,13 +85,13 @@ public class InSimService : BackgroundService
         _dispatcher.Bind<IS_PIT>(InSimPacketType.ISP_PIT, HandlePitStopStart);
         _dispatcher.Bind<IS_PSF>(InSimPacketType.ISP_PSF, HandlePitStopFinish);
         _dispatcher.Bind<IS_PLA>(InSimPacketType.ISP_PLA, HandlePitLaneChange);
+        _dispatcher.Bind<IS_FIN>(InSimPacketType.ISP_FIN, HandleFinish);
         _dispatcher.Bind<IS_RES>(InSimPacketType.ISP_RES, HandleResult);
         _dispatcher.Bind<IS_REO>(InSimPacketType.ISP_REO, HandleReorder);
         _dispatcher.BindRaw(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
 
         // Known packet types we don't need — suppress log noise
         _dispatcher.Suppress(
-            InSimPacketType.ISP_FIN,
             InSimPacketType.ISP_PEN,
             InSimPacketType.ISP_CCH,
             InSimPacketType.ISP_UCO
@@ -307,6 +310,39 @@ public class InSimService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to send info requests");
+        }
+    }
+
+    private async Task RequestOfficialResultsAsync(string reason, bool force = false)
+    {
+        try
+        {
+            if (_connection?.IsConnected != true)
+            {
+                return;
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            if (!force && nowUtc - _lastOfficialResultsRequestUtc < OfficialResultsRequestThrottle)
+            {
+                return;
+            }
+
+            _lastOfficialResultsRequestUtc = nowUtc;
+
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1,
+                Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = (byte)nowUtc.Ticks,
+                SubT = (byte)TinyPacketType.TINY_RES
+            }, CancellationToken.None);
+
+            _logger.LogDebug("📤 Requested official results ({Reason})", reason);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to request official results ({Reason})", reason);
         }
     }
 
@@ -964,6 +1000,28 @@ public class InSimService : BackgroundService
         
         // Clean up username mapping when connection leaves
         _raceSession.RemoveUsername(packet.UCID);
+    }
+
+    private void HandleTiny(IS_TINY packet)
+    {
+        if (packet.SubT == (byte)TinyPacketType.TINY_REN || packet.SubT == (byte)TinyPacketType.TINY_CLR)
+        {
+            _ = RequestOfficialResultsAsync(((TinyPacketType)packet.SubT).ToString(), force: true);
+        }
+    }
+
+    /// <summary>
+    /// Handles IS_FIN packets so official classified results can be requested before session reset.
+    /// </summary>
+    private void HandleFinish(IS_FIN packet)
+    {
+        _logger.LogDebug(
+            "🏁 Finish notification: PLID {PLID} | Laps {LapsDone} | Stops {NumStops}",
+            packet.PLID,
+            packet.LapsDone,
+            packet.NumStops);
+
+        _ = RequestOfficialResultsAsync("finish-notification");
     }
 
     /// <summary>

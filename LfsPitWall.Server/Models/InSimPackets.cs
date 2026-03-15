@@ -584,6 +584,30 @@ public struct IS_CNL
 }
 
 /// <summary>
+/// Finished race notification - not a final classified result.
+/// Physical size: 20 bytes (Size = 5).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_FIN
+{
+    public byte Size;                    // 5 (20 / 4)
+    public byte Type;                    // ISP_FIN
+    public byte ReqI;                    // 0
+    public byte PLID;                    // Player ID (0 if player left before result was sent)
+
+    public uint TTime;                   // Race time (ms)
+    public uint BTime;                   // Best lap (ms)
+
+    public byte SpA;                     // Spare
+    public byte NumStops;                // Number of pit stops
+    public byte Confirm;                 // Confirmation flags (CONF_x)
+    public byte SpB;                     // Spare
+
+    public ushort LapsDone;              // Laps completed
+    public ushort Flags;                 // Player flags (PIF_x)
+}
+
+/// <summary>
 /// Result packet - sent for race results or qualifying results.
 /// Physical size: 84 bytes (Size = 21).
 /// </summary>

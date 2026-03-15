@@ -1011,13 +1011,15 @@ public class RaceSession
         {
             Players[driver.PlayerId] = driver;
 
-            if (!string.IsNullOrWhiteSpace(driver.Username)
-                && _officialResultsByUsername.TryGetValue(driver.Username, out var officialResultEntry))
+            if (TryGetOfficialResultEntry(driver.PlayerId, driver.Username, out var officialResultEntry))
             {
                 officialResultEntry.PlayerId = driver.PlayerId;
                 officialResultEntry.DriverName = driver.Name;
                 officialResultEntry.CarName = driver.CarName;
+                officialResultEntry.Username = driver.Username;
                 driver.SetOfficialResult(officialResultEntry.Result);
+
+                StoreOfficialResultEntry(officialResultEntry, driver.PlayerId, driver.Username);
             }
 
             if (!string.IsNullOrWhiteSpace(driver.Username)
@@ -1092,17 +1094,16 @@ public class RaceSession
                 driver.SetOfficialResult(officialResult);
             }
 
-            if (!string.IsNullOrWhiteSpace(username))
+            var officialResultEntry = new OfficialResultIndexEntry
             {
-                _officialResultsByUsername[username] = new OfficialResultIndexEntry
-                {
-                    Username = username,
-                    DriverName = driverName,
-                    CarName = carName,
-                    PlayerId = playerId == 0 ? null : playerId,
-                    Result = officialResult
-                };
-            }
+                Username = username,
+                DriverName = driverName,
+                CarName = carName,
+                PlayerId = playerId == 0 ? null : playerId,
+                Result = officialResult
+            };
+
+            StoreOfficialResultEntry(officialResultEntry, playerId, username);
         }
     }
 
@@ -1145,10 +1146,10 @@ public class RaceSession
 
             var raceResults = _officialResultsByUsername
                 .Where(pair => pair.Value.Result.Kind == OfficialResultKind.Race)
-                .Select(pair => new { Username = pair.Key, Entry = pair.Value, Result = pair.Value.Result })
+                .Select(pair => new { Entry = pair.Value, Result = pair.Value.Result })
                 .ToList();
 
-            foreach (var poleSitter in raceResults.Where(entry => ResolveRaceStartPosition(entry.Username, entry.Entry) == 1))
+            foreach (var poleSitter in raceResults.Where(entry => ResolveRaceStartPosition(entry.Entry.Username, entry.Entry) == 1))
             {
                 poleSitter.Result.PolePositionBonusPoints = polePositionBonusPoints;
             }
@@ -1170,7 +1171,7 @@ public class RaceSession
                 .Select(entry => new
                 {
                     entry.Result,
-                    StartingPosition = ResolveRaceStartPosition(entry.Username, entry.Entry),
+                    StartingPosition = ResolveRaceStartPosition(entry.Entry.Username, entry.Entry),
                     FinishPosition = entry.Result.Position
                 })
                 .Where(entry => entry.StartingPosition.HasValue && entry.FinishPosition.HasValue)
@@ -1383,12 +1384,12 @@ public class RaceSession
 
     private void PersistOfficialResult(Driver driver)
     {
-        if (driver.OfficialResult == null || string.IsNullOrWhiteSpace(driver.Username))
+        if (driver.OfficialResult == null)
         {
             return;
         }
 
-        _officialResultsByUsername[driver.Username] = new OfficialResultIndexEntry
+        var officialResultEntry = new OfficialResultIndexEntry
         {
             Username = driver.Username,
             DriverName = driver.Name,
@@ -1396,7 +1397,52 @@ public class RaceSession
             PlayerId = driver.PlayerId,
             Result = driver.OfficialResult
         };
+
+        StoreOfficialResultEntry(officialResultEntry, driver.PlayerId, driver.Username);
     }
+
+    private bool TryGetOfficialResultEntry(byte playerId, string username, out OfficialResultIndexEntry officialResultEntry)
+    {
+        if (!string.IsNullOrWhiteSpace(username)
+            && _officialResultsByUsername.TryGetValue(username, out var officialResultEntryByUsername))
+        {
+            officialResultEntry = officialResultEntryByUsername;
+            return true;
+        }
+
+        if (playerId != 0
+            && _officialResultsByUsername.TryGetValue(CreateOfficialResultPlayerKey(playerId), out var officialResultEntryByPlayerId))
+        {
+            officialResultEntry = officialResultEntryByPlayerId;
+            return true;
+        }
+
+        officialResultEntry = new OfficialResultIndexEntry();
+
+        return false;
+    }
+
+    private void StoreOfficialResultEntry(OfficialResultIndexEntry officialResultEntry, byte playerId, string username)
+    {
+        if (!string.IsNullOrWhiteSpace(username))
+        {
+            _officialResultsByUsername[username] = officialResultEntry;
+
+            if (playerId != 0)
+            {
+                _officialResultsByUsername.Remove(CreateOfficialResultPlayerKey(playerId));
+            }
+
+            return;
+        }
+
+        if (playerId != 0)
+        {
+            _officialResultsByUsername[CreateOfficialResultPlayerKey(playerId)] = officialResultEntry;
+        }
+    }
+
+    private static string CreateOfficialResultPlayerKey(byte playerId) => $"plid:{playerId}";
 
     private int? ResolveRaceStartPosition(string username, OfficialResultIndexEntry officialResultEntry)
     {

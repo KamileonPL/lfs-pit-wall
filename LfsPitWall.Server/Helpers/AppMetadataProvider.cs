@@ -18,7 +18,7 @@ public static class AppMetadataProvider
 {
     private const string DefaultRepositoryUrl = "https://github.com/KamileonPL/lfs-pit-wall";
     private const string DefaultDiscordUrl = "https://discord.gg/d68BEY6";
-    private const string DefaultVersion = "0.2";
+    private const string DefaultVersion = "0.3";
     private const string DefaultAppName = "LFS Pit Wall";
     private const string DefaultAuthor = "Kamileon";
     private const string DefaultProjectType = "ASP.NET Core web app with an HTML/JavaScript frontend";
@@ -44,8 +44,8 @@ public static class AppMetadataProvider
             IsOpenSource: true,
             ProjectType: DefaultProjectType,
             DataSourceName: DefaultDataSourceName,
-                DataSourceUrl: DefaultDataSourceUrl,
-                ShowDebugConsole: showDebugConsole);
+            DataSourceUrl: DefaultDataSourceUrl,
+            ShowDebugConsole: showDebugConsole);
     }
 
     private static string? GetAssemblyMetadataValue(Assembly assembly, string key)
