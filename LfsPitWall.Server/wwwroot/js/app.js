@@ -37,6 +37,20 @@ const LAP_HISTORY_HIDE_DELAY_MS = 80;
 const DRIVER_PROFILE_HIDE_DELAY_MS = 180;
 const DRIVER_PROFILE_RETRY_DELAY_MS = 6500;
 const DRIVER_PROFILE_TOOLTIP_GAP_PX = 8;
+const PUBSTAT_TRACK_PREFIXES = {
+    0: "BL",
+    1: "SO",
+    2: "FE",
+    4: "KY",
+    6: "WE",
+    7: "AS",
+    8: "AU"
+};
+const PUBSTAT_TRACK_SUFFIXES = {
+    0: "",
+    1: "R",
+    2: "X"
+};
 const COUNTRY_CODE_ALIASES = {
     "czech republic": "CZ",
     "russia": "RU",
@@ -340,6 +354,31 @@ function formatRelativeTimestamp(value) {
     }
 
     return `${diffDays}d ago`;
+}
+
+function formatPubstatTrackCode(trackCode) {
+    const normalized = String(trackCode || "").trim();
+    if (!/^\d{3}$/.test(normalized)) {
+        return normalized;
+    }
+
+    const regionDigit = Number.parseInt(normalized[0], 10);
+    const layoutDigit = Number.parseInt(normalized[1], 10);
+    const variantDigit = Number.parseInt(normalized[2], 10);
+    const trackPrefix = PUBSTAT_TRACK_PREFIXES[regionDigit];
+    const trackSuffix = PUBSTAT_TRACK_SUFFIXES[variantDigit];
+
+    if (!trackPrefix || trackSuffix == null) {
+        return normalized;
+    }
+
+    return `${trackPrefix}${layoutDigit + 1}${trackSuffix}`;
+}
+
+function formatDriverProfileLastCombo(trackCode, carCode) {
+    const formattedTrack = formatPubstatTrackCode(trackCode) || "-";
+    const formattedCar = String(carCode || "").trim();
+    return formattedCar ? `${formattedTrack} ${formattedCar}` : formattedTrack;
 }
 
 function escapeHtml(value) {
@@ -845,7 +884,7 @@ function renderDriverProfileTooltip(driver, profile) {
         </div>
         <div class="driver-profile-tooltip-meta">
             <div class="driver-profile-tooltip-meta-row"><span>Last host</span><strong class="driver-profile-tooltip-host">${hostNameHtml}</strong></div>
-            <div class="driver-profile-tooltip-meta-row"><span>Last combo</span><strong>${stats.currentOrLastTrack || "-"} ${stats.currentOrLastCar || ""}</strong></div>
+            <div class="driver-profile-tooltip-meta-row"><span>Last combo</span><strong>${formatDriverProfileLastCombo(stats.currentOrLastTrack, stats.currentOrLastCar)}</strong></div>
             <div class="driver-profile-tooltip-meta-row"><span>LFS World</span><strong>${refreshedText}</strong></div>
         </div>`;
 }
