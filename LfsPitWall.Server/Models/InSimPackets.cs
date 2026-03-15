@@ -119,6 +119,8 @@ public enum TinyPacketType : byte
     TINY_RES = 15,     // Get all results
     TINY_REO = 18,     // Get race order
     TINY_RST = 19,     // Get race start info
+    TINY_AXI = 20,     // Get AutoX info
+    TINY_AXC = 21,     // AutoX cleared
 }
 
 /// <summary>
@@ -374,6 +376,31 @@ public struct IS_RST
     public ushort Split1;                // Node index - split 1
     public ushort Split2;                // Node index - split 2
     public ushort Split3;                // Node index - split 3
+}
+
+/// <summary>
+/// Autocross layout information packet - sent when a layout is loaded.
+/// Reply to TINY_AXI request.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct IS_AXI
+{
+    public byte Size;                    // 40
+    public byte Type;                    // ISP_AXI
+    public byte ReqI;                    // 0 unless this is a reply to TINY_AXI request
+    public byte Zero;                    // 0
+
+    public byte AXStart;                 // autocross start position
+    public byte NumCP;                   // number of checkpoints
+    public ushort NumO;                  // number of objects
+
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+    public byte[] LName;                 // the name of the layout last loaded
+
+    public string GetLayoutName()
+    {
+        return System.Text.Encoding.ASCII.GetString(LName ?? Array.Empty<byte>()).TrimEnd('\0').Trim();
+    }
 }
 
 /// <summary>

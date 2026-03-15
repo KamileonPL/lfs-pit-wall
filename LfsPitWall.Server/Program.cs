@@ -53,6 +53,14 @@ builder.Services
     .Validate(options => !string.IsNullOrWhiteSpace(options.RootPath), "Archive root path must not be empty.")
     .ValidateOnStart();
 
+builder.Services
+    .AddOptions<PubstatOptions>()
+    .Bind(builder.Configuration.GetSection(PubstatOptions.SectionName));
+
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<DriverProfileService>();
+builder.Services.AddHostedService(static serviceProvider => serviceProvider.GetRequiredService<DriverProfileService>());
+
 // Add InSim service
 builder.Services.AddHostedService<InSimService>();
 

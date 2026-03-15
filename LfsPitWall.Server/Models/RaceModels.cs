@@ -738,9 +738,19 @@ public class RaceSession
     public DateTime SessionStartedAtUtc { get; private set; } = DateTime.UtcNow;
 
     /// <summary>
-    /// Track name
+    /// Base track code reported by LFS, e.g. BL4X.
     /// </summary>
     public string TrackName { get; set; } = "Unknown";
+
+    /// <summary>
+    /// Optional custom layout name reported by IS_AXI.
+    /// </summary>
+    public string LayoutName { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Canonical display name used across live UI and archive.
+    /// </summary>
+    public string DisplayTrackName => BuildDisplayTrackName(TrackName, LayoutName);
 
     /// <summary>
     /// Multiplayer host name as plain text.
@@ -1351,6 +1361,7 @@ public class RaceSession
         lock (_playersLock)
         {
             TrackName = "Unknown";
+            LayoutName = string.Empty;
             HostName = string.Empty;
             HostNameHtml = string.Empty;
             SessionId = CreateSessionId();
@@ -1473,7 +1484,9 @@ public class RaceSession
                 CapturedAtUtc = DateTime.UtcNow,
                 SessionType = GetSessionTypeString(),
                 SessionTypeId = SessionType,
-                TrackName = TrackName,
+                TrackName = DisplayTrackName,
+                BaseTrackName = TrackName,
+                LayoutName = LayoutName,
                 HostName = HostName,
                 HostNameHtml = HostNameHtml,
                 WeatherType = GetWeatherTypeString(),
@@ -1547,6 +1560,30 @@ public class RaceSession
 
             return snapshot;
         }
+    }
+
+    public void SetTrackIdentity(string trackName, string? layoutName = null)
+    {
+        TrackName = string.IsNullOrWhiteSpace(trackName) ? "Unknown" : trackName.Trim();
+        LayoutName = string.IsNullOrWhiteSpace(layoutName) ? string.Empty : layoutName.Trim();
+    }
+
+    private static string BuildDisplayTrackName(string trackName, string? layoutName)
+    {
+        var normalizedTrackName = string.IsNullOrWhiteSpace(trackName) ? "Unknown" : trackName.Trim();
+        var normalizedLayoutName = string.IsNullOrWhiteSpace(layoutName) ? string.Empty : layoutName.Trim();
+
+        if (string.IsNullOrEmpty(normalizedLayoutName))
+        {
+            return normalizedTrackName;
+        }
+
+        if (normalizedLayoutName.StartsWith(normalizedTrackName, StringComparison.OrdinalIgnoreCase))
+        {
+            return normalizedLayoutName;
+        }
+
+        return $"{normalizedTrackName}_{normalizedLayoutName}";
     }
 
     private static ArchiveLapSnapshot CloneLap(LapData lap)

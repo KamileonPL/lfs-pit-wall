@@ -72,6 +72,7 @@ public class InSimService : BackgroundService
         _dispatcher.BindRaw(InSimPacketType.ISP_MSO, HandleMessageOut);
         _dispatcher.Bind<IS_STA>(InSimPacketType.ISP_STA, HandleSessionState);
         _dispatcher.Bind<IS_RST>(InSimPacketType.ISP_RST, HandleRaceStart);
+        _dispatcher.Bind<IS_AXI>(InSimPacketType.ISP_AXI, HandleAutocrossInfo);
 
         // Player lifecycle
         _dispatcher.Bind<IS_NCN>(InSimPacketType.ISP_NCN, HandleNewConnection);
@@ -296,6 +297,12 @@ public class InSimService : BackgroundService
             await _connection.SendAsync(new IS_TINY
             {
                 Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_AXI
+            }, CancellationToken.None);
+
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
                 ReqI = reqId, SubT = (byte)TinyPacketType.TINY_RES
             }, CancellationToken.None);
 
@@ -305,7 +312,7 @@ public class InSimService : BackgroundService
                 ReqI = reqId, SubT = (byte)TinyPacketType.TINY_REO
             }, CancellationToken.None);
 
-            _logger.LogDebug("📤 Sent info requests: ISM, SST, NCN, NPL, RST, RES, REO");
+            _logger.LogDebug("📤 Sent info requests: ISM, SST, NCN, NPL, RST, AXI, RES, REO");
         }
         catch (Exception ex)
         {
@@ -541,6 +548,31 @@ public class InSimService : BackgroundService
             || normalizedTrackName.EndsWith("X", StringComparison.Ordinal);
     }
 
+    private async Task RequestAutocrossInfoAsync(string reason)
+    {
+        try
+        {
+            if (_connection?.IsConnected != true || !IsLayoutCapableTrack(_raceSession.TrackName))
+            {
+                return;
+            }
+
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1,
+                Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = (byte)DateTime.UtcNow.Ticks,
+                SubT = (byte)TinyPacketType.TINY_AXI
+            }, CancellationToken.None);
+
+            _logger.LogDebug("📤 Requested AutoX info ({Reason})", reason);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to request AutoX info ({Reason})", reason);
+        }
+    }
+
     private bool ShouldActivateObservedSpatialFallback(bool useSpatialTrackMapKeying, int contributedDrivers, int distinctNodeCount)
     {
         if (useSpatialTrackMapKeying || contributedDrivers == 0)
@@ -581,9 +613,14 @@ public class InSimService : BackgroundService
         }
 
         if (!string.IsNullOrEmpty(trackName))
-            _raceSession.TrackName = trackName;
+            _raceSession.SetTrackIdentity(trackName);
         else
-            _raceSession.TrackName = "Unknown";
+            _raceSession.SetTrackIdentity("Unknown");
+
+        if (IsLayoutCapableTrack(_raceSession.TrackName))
+        {
+            _ = RequestAutocrossInfoAsync("session-state");
+        }
 
         _raceSession.WeatherType = packet.Weather;
         _raceSession.WindType = packet.Wind;
@@ -1008,6 +1045,11 @@ public class InSimService : BackgroundService
         {
             _ = RequestOfficialResultsAsync(((TinyPacketType)packet.SubT).ToString(), force: true);
         }
+
+        if (packet.SubT == (byte)TinyPacketType.TINY_AXC)
+        {
+            _raceSession.SetTrackIdentity(_raceSession.TrackName);
+        }
     }
 
     /// <summary>
@@ -1124,11 +1166,16 @@ public class InSimService : BackgroundService
             _raceSession.ClearTrackMap();
         }
 
-        _raceSession.TrackName = normalizedTrackName;
+        _raceSession.SetTrackIdentity(normalizedTrackName);
         _raceSession.WeatherType = packet.Weather;
         _raceSession.WindType = packet.Wind;
         _raceSession.SessionType = packet.RaceLaps == 0 ? (byte)1 : (byte)2;
         _raceSession.RaceInProgress = packet.RaceLaps > 0;
+
+        if (IsLayoutCapableTrack(_raceSession.TrackName))
+        {
+            _ = RequestAutocrossInfoAsync("race-start");
+        }
         
         // Store race parameters from IS_RST packet
         _raceSession.MaxRaceLaps = packet.RaceLaps;
@@ -1155,6 +1202,19 @@ public class InSimService : BackgroundService
         {
             _ = RequestInitialDataAsync();
         }
+    }
+
+    private void HandleAutocrossInfo(IS_AXI packet)
+    {
+        var layoutName = packet.GetLayoutName();
+        _raceSession.SetTrackIdentity(_raceSession.TrackName, layoutName);
+
+        _logger.LogInformation(
+            "🧩 LAYOUT INFO: {DisplayTrackName} | Layout: {LayoutName} | Objects: {ObjectCount} | Checkpoints: {CheckpointCount}",
+            _raceSession.DisplayTrackName,
+            string.IsNullOrWhiteSpace(layoutName) ? "-" : layoutName,
+            packet.NumO,
+            packet.NumCP);
     }
 
     // ── Connection Cleanup ──────────────────────────────

@@ -14,17 +14,20 @@ public class TimingBroadcaster : BackgroundService
 {
     private readonly IHubContext<TimingHub> _hubContext;
     private readonly RaceSession _raceSession;
+    private readonly DriverProfileService _driverProfileService;
     private readonly ILogger<TimingBroadcaster> _logger;
     private readonly int _broadcastIntervalMs;
 
     public TimingBroadcaster(
         IHubContext<TimingHub> hubContext,
         RaceSession raceSession,
+        DriverProfileService driverProfileService,
         ILogger<TimingBroadcaster> logger,
         IOptions<TelemetryOptions> telemetryOptions)
     {
         _hubContext = hubContext;
         _raceSession = raceSession;
+        _driverProfileService = driverProfileService;
         _logger = logger;
         _broadcastIntervalMs = telemetryOptions.Value.GetClampedBroadcastIntervalMs();
     }
@@ -41,7 +44,7 @@ public class TimingBroadcaster : BackgroundService
             {
                 try
                 {
-                    var sessionData = SessionDataBuilder.Build(_raceSession);
+                    var sessionData = SessionDataBuilder.Build(_raceSession, _driverProfileService);
                     await _hubContext.Clients.All.SendAsync("ReceiveSessionUpdate", sessionData, stoppingToken);
                 }
                 catch (Exception ex)

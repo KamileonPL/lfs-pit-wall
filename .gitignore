@@ -6,6 +6,7 @@
 # LfsPitWall specific
 LfsPitWall.Server/appsettings.Development.json
 LfsPitWall.Server/Archive/*
+LfsPitWall.Server/data/*
 
 # dotenv files
 .env
@@ -486,5 +487,3 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
-
-

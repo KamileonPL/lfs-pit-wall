@@ -128,6 +128,8 @@ public sealed class SessionArchiveWriter
             SessionType = snapshot.SessionType,
             SessionTypeId = snapshot.SessionTypeId,
             TrackName = snapshot.TrackName,
+            BaseTrackName = snapshot.BaseTrackName,
+            LayoutName = snapshot.LayoutName,
             HostName = snapshot.HostName,
             WeatherType = snapshot.WeatherType,
             WeatherTypeId = snapshot.WeatherTypeId,

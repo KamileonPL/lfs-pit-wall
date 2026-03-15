@@ -267,6 +267,8 @@ public sealed class ArchiveBrowserService
             SessionType = dump.Session.SessionType,
             SessionTypeId = dump.Session.SessionTypeId,
             TrackName = dump.Session.TrackName,
+            BaseTrackName = string.IsNullOrWhiteSpace(dump.Session.BaseTrackName) ? dump.Session.TrackName : dump.Session.BaseTrackName,
+            LayoutName = dump.Session.LayoutName ?? string.Empty,
             SessionStartedAtUtc = dump.Session.SessionStartedAtUtc,
             ArchivedAtUtc = dump.ArchivedAtUtc,
             DriverCount = drivers.Count,
@@ -355,6 +357,8 @@ public sealed class ArchiveBrowserService
         return string.Join(' ', new[]
         {
             summary.TrackName,
+            summary.BaseTrackName,
+            summary.LayoutName,
             summary.SessionType,
             summary.WinnerName,
             summary.SessionBestLapAuthorName,

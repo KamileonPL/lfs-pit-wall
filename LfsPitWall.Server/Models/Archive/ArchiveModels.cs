@@ -28,6 +28,8 @@ public class SessionArchiveSnapshot
     public string SessionType { get; set; } = "Unknown";
     public byte SessionTypeId { get; set; }
     public string TrackName { get; set; } = "Unknown";
+    public string BaseTrackName { get; set; } = "Unknown";
+    public string LayoutName { get; set; } = "";
     public string HostName { get; set; } = "";
     public string HostNameHtml { get; set; } = "";
     public string WeatherType { get; set; } = "Unknown";
@@ -59,6 +61,8 @@ public class ArchiveSessionMetadata
     public string SessionType { get; set; } = "Unknown";
     public byte SessionTypeId { get; set; }
     public string TrackName { get; set; } = "Unknown";
+    public string BaseTrackName { get; set; } = "Unknown";
+    public string LayoutName { get; set; } = "";
     public string HostName { get; set; } = "";
     public string WeatherType { get; set; } = "Unknown";
     public byte WeatherTypeId { get; set; }

@@ -7,6 +7,30 @@ let archiveCurrentPage = 1;
 const selectedComparisonDriverIds = new Set();
 const chartPalette = ["#facc15", "#38bdf8", "#f87171", "#34d399", "#c084fc", "#fb923c", "#a3e635", "#f472b6"];
 const archivePageSize = 12;
+const LFS_DEFAULT_COLOR = "#6B8E23";
+const LFS_COLOR_MAP = {
+    0: "#000000",
+    1: "#FF0000",
+    2: "#00FF00",
+    3: "#FFFF00",
+    4: "#0000FF",
+    5: "#FF00FF",
+    6: "#00FFFF",
+    7: "#FFFFFF",
+    8: LFS_DEFAULT_COLOR
+};
+const LFS_ESCAPE_MAP = {
+    v: "|",
+    a: "*",
+    c: ":",
+    d: "\\",
+    s: "/",
+    q: "?",
+    t: '"',
+    l: "<",
+    r: ">",
+    "^": "^"
+};
 
 document.addEventListener("DOMContentLoaded", () => {
     applyInitialFiltersFromQuery();
@@ -300,7 +324,7 @@ function renderArchiveSessionList() {
                     </div>
                     <div>
                         <span class="archive-session-highlight-label">Winner</span>
-                        <span class="archive-session-highlight-value">${escapeHtml(item.winnerName || "-")}</span>
+                        <span class="archive-session-highlight-value">${formatArchiveDriverName(item.winnerName, "-")}</span>
                     </div>
                 </div>
             </button>
@@ -426,11 +450,11 @@ function renderArchiveDetail() {
                 <div class="archive-summary-card">
                     <p class="archive-summary-label">Session Best Lap</p>
                     <p class="archive-summary-value">${formatLapTime(archiveDetail.sessionBestLap?.lapTimeMs)}</p>
-                    <p class="archive-summary-note">${escapeHtml(archiveDetail.sessionBestLap?.authorName || "No best lap recorded")}</p>
+                    <p class="archive-summary-note">${formatArchiveDriverName(archiveDetail.sessionBestLap?.authorName, "No best lap recorded")}</p>
                 </div>
                 <div class="archive-summary-card">
                     <p class="archive-summary-label">Winner / Leader</p>
-                    <p class="archive-summary-value">${escapeHtml(summary.winnerName || "-")}</p>
+                    <p class="archive-summary-value">${formatArchiveDriverName(summary.winnerName, "-")}</p>
                     <p class="archive-summary-note">${escapeHtml(session.trackName || "Unknown")} • ${escapeHtml(session.weatherType || "Unknown")}</p>
                 </div>
                 <div class="archive-summary-card">
@@ -534,7 +558,7 @@ function renderArchiveBestSectors() {
             <div class="archive-sector-card">
                 <p class="archive-sector-label">Sector ${Number(sector.sectorNumber || 0)}</p>
                 <p class="archive-sector-time">${formatLapTime(sector.timeMs)}</p>
-                <p class="archive-sector-driver">${escapeHtml(sector.authorName || "-")}</p>
+                <p class="archive-sector-driver">${formatArchiveDriverName(sector.authorName, "-")}</p>
             </div>
         `).join("");
 }
@@ -565,7 +589,7 @@ function renderComparisonSelector() {
         return `
             <button type="button" class="archive-driver-chip${selected ? " is-active" : ""}" data-driver-id="${driverId}">
                 <span class="archive-driver-chip-dot" style="background:${escapeHtml(color)}"></span>
-                <span>${escapeHtml(driver.name || "Unknown")}</span>
+                <span>${formatArchiveDriverName(driver.name, "Unknown")}</span>
             </button>
         `;
     }).join("");
@@ -680,7 +704,7 @@ function renderComparisonChart() {
             <div class="archive-chart-legend-item">
                 <span class="archive-chart-legend-dot" style="background:${escapeHtml(color)}"></span>
                 <div>
-                    <p class="archive-chart-legend-name">${escapeHtml(driver.name || "Unknown")}</p>
+                    <p class="archive-chart-legend-name">${formatArchiveDriverName(driver.name, "Unknown")}</p>
                     <p class="archive-chart-legend-meta">Best ${formatLapTime(driver.personalBestLap?.lapTimeMs)} • ${(driver.lapHistory || []).length} laps</p>
                 </div>
             </div>
@@ -723,7 +747,7 @@ function renderArchiveStandings() {
                     <div class="archive-driver-cell">
                         <span class="archive-driver-swatch" style="background:${escapeHtml(getDriverSeriesColor(driver, index))}"></span>
                         <div>
-                            <div class="archive-driver-name">${escapeHtml(driver.name || "Unknown")}</div>
+                            <div class="archive-driver-name">${formatArchiveDriverName(driver.name, "Unknown")}</div>
                             <div class="archive-driver-subtitle${driver.username ? "" : " archive-driver-subtitle--muted"}">${escapeHtml(driver.username || "No linked username")}</div>
                         </div>
                     </div>
@@ -760,7 +784,7 @@ function renderOfficialResults() {
                         <p class="archive-official-position">P${result.finishPosition ?? "-"}</p>
                         <p class="archive-official-points">${result.points?.totalPoints ?? 0} pts</p>
                     </div>
-                    <p class="archive-official-driver">${escapeHtml(result.driverName || result.username || "Unknown")}</p>
+                    <p class="archive-official-driver">${formatArchiveDriverName(result.driverName || result.username, "Unknown")}</p>
                     <p class="archive-official-car">${escapeHtml(result.carName || "-")}</p>
                     <div class="archive-official-points-breakdown">
                         <div class="archive-points-breakdown-row">
@@ -833,6 +857,78 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+}
+
+function appendLfsHtmlSegment(segments, text, color) {
+    if (!text) {
+        return;
+    }
+
+    const safeText = escapeHtml(text);
+    if (!color) {
+        segments.push(safeText);
+        return;
+    }
+
+    segments.push(`<span style="color:${color}">${safeText}</span>`);
+}
+
+function convertLfsTextToHtml(text) {
+    const input = String(text || "");
+    if (!input) {
+        return "";
+    }
+
+    const segments = [];
+    let currentColor = /\^[0-9]/.test(input) ? LFS_DEFAULT_COLOR : null;
+    let buffer = "";
+
+    for (let index = 0; index < input.length; index += 1) {
+        const currentChar = input[index];
+        const nextChar = input[index + 1];
+
+        if (currentChar === "^" && nextChar) {
+            if (Object.prototype.hasOwnProperty.call(LFS_COLOR_MAP, nextChar)) {
+                appendLfsHtmlSegment(segments, buffer, currentColor);
+                buffer = "";
+                currentColor = LFS_COLOR_MAP[nextChar];
+                index += 1;
+                continue;
+            }
+
+            if (nextChar === "9") {
+                appendLfsHtmlSegment(segments, buffer, currentColor);
+                buffer = "";
+                currentColor = /\^[0-9]/.test(input) ? LFS_DEFAULT_COLOR : null;
+                index += 1;
+                continue;
+            }
+
+            if (Object.prototype.hasOwnProperty.call(LFS_ESCAPE_MAP, nextChar)) {
+                buffer += LFS_ESCAPE_MAP[nextChar];
+                index += 1;
+                continue;
+            }
+        }
+
+        buffer += currentChar;
+    }
+
+    appendLfsHtmlSegment(segments, buffer, currentColor);
+    return segments.join("");
+}
+
+function formatArchiveDriverName(value, fallback = "-") {
+    const rawValue = String(value || "").trim();
+    if (!rawValue) {
+        return escapeHtml(fallback);
+    }
+
+    if (/<span\b/i.test(rawValue)) {
+        return rawValue;
+    }
+
+    return convertLfsTextToHtml(rawValue) || escapeHtml(rawValue);
 }
 
 function buildOfficialResultLookup(results) {

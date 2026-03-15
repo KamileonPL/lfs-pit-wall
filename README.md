@@ -10,6 +10,7 @@ It is designed to be fast to run, easy to understand, and practical for real ses
 - Live track map with driver markers, selection, and synchronized driver legend
 - Session best lap, best sectors, and session top speed
 - Driver lap history tooltip on demand
+- Driver country flags and cached LFS World profile hover cards
 - Live race clock with smooth frontend interpolation
 - Estimated remaining race time for lap-based races
 - Race progress overlay with laps completed and track name
@@ -95,6 +96,39 @@ dotnet run --project "LfsPitWall.Server/LfsPitWall.Server.csproj"
 - `appsettings.json` is the main runtime config.
 - `appsettings.Development.json` is optional and can stay empty if you do not need environment-specific overrides.
 - The current development flow relies on InSim only. OutSim and OutGauge are not required for the existing dashboard.
+
+### Driver Profiles And Flags
+
+The live timing table can enrich drivers with country flags and a small hover profile sourced from LFS World Pubstat.
+
+The implementation is designed for cheap VPS hosting:
+
+- profile data is cached on disk in `LfsPitWall.Server/data/drivers`
+- only lightweight summary data is included in the live SignalR session payload
+- detailed hover data is loaded on demand
+- cached entries are refreshed in the background with a controlled request interval
+
+Configure Pubstat in [LfsPitWall.Server/appsettings.json](LfsPitWall.Server/appsettings.json):
+
+```json
+{
+    "Pubstat": {
+        "Enabled": true,
+        "IdentKey": "YOUR_PUBSTAT_IDENT_KEY",
+        "UsePremiumEndpoint": false,
+        "PubstatUrl": "https://www.lfsworld.net/pubstat/get_stat2.php?version=1.5",
+        "CacheRootPath": "data/drivers",
+        "StaleAfterDays": 7,
+        "RequestIntervalSeconds": 6
+    }
+}
+```
+
+Notes:
+
+- `IdentKey` stays server-side only and is never exposed to the frontend
+- with the free Pubstat tier, keep `RequestIntervalSeconds` at `5` or more
+- if `IdentKey` is empty, the app keeps working normally, but driver profile enrichment stays disabled
 
 </details>
 

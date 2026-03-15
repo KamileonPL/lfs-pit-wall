@@ -6,15 +6,21 @@
 // ── State ──────────────────────────────────────────────────
 
 let hoveredDriverId = null;
+let hoveredDriverProfileId = null;
 let hoveredLapHistoryDriverId = null;
+let visibleDriverProfileId = null;
 let visibleLapHistoryDriverId = null;
 let latestSessionData = null;
 let lapHistorySessionKey = null;
 let lapHistoryShowTimer = null;
 let lapHistoryHideTimer = null;
+let driverProfileShowTimer = null;
+let driverProfileHideTimer = null;
+let driverProfileRetryTimer = null;
 let lastPointerClientX = null;
 let lastPointerClientY = null;
 let isLapHistoryTooltipHovered = false;
+let isDriverProfileTooltipHovered = false;
 let localClockTimerId = null;
 let sessionClockTimerId = null;
 let sessionClockBaseMs = 0;
@@ -25,8 +31,61 @@ let lastRenderedChatRevision = null;
 let standingsViewMode = "table";
 const selectedDriverIds = new Set();
 const driverLapHistoryCache = new Map();
+const driverProfileCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
+const DRIVER_PROFILE_HIDE_DELAY_MS = 180;
+const DRIVER_PROFILE_RETRY_DELAY_MS = 6500;
+const DRIVER_PROFILE_TOOLTIP_GAP_PX = 8;
+const PUBSTAT_TRACK_PREFIXES = {
+    0: "BL",
+    1: "SO",
+    2: "FE",
+    4: "KY",
+    6: "WE",
+    7: "AS",
+    8: "AU"
+};
+const PUBSTAT_TRACK_SUFFIXES = {
+    0: "",
+    1: "R",
+    2: "X"
+};
+const COUNTRY_CODE_ALIASES = {
+    "czech republic": "CZ",
+    "russia": "RU",
+    "south korea": "KR",
+    "north korea": "KP",
+    "taiwan": "TW",
+    "venezuela": "VE"
+};
+const LFS_DEFAULT_COLOR = "#6B8E23";
+const LFS_COLOR_MAP = {
+    0: "#000000",
+    1: "#FF0000",
+    2: "#00FF00",
+    3: "#FFFF00",
+    4: "#0000FF",
+    5: "#FF00FF",
+    6: "#00FFFF",
+    7: "#FFFFFF",
+    8: LFS_DEFAULT_COLOR
+};
+const LFS_ESCAPE_MAP = {
+    v: "|",
+    a: "*",
+    c: ":",
+    d: "\\",
+    s: "/",
+    q: "?",
+    t: '"',
+    l: "<",
+    r: ">",
+    "^": "^"
+};
+const countryDisplayNames = typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames([navigator.language || "en"], { type: "region" })
+    : null;
 
 function renderLocalDateTime() {
     const timeElement = document.getElementById("live-local-time");
@@ -192,11 +251,247 @@ function getLapHistoryTrigger(element) {
     return element?.closest?.("[data-last-lap-driver-id]") || null;
 }
 
+function getDriverProfileTrigger(element) {
+    return element?.closest?.("[data-driver-profile-id]") || null;
+}
+
 function clearLapHistoryTimers() {
     window.clearTimeout(lapHistoryShowTimer);
     window.clearTimeout(lapHistoryHideTimer);
     lapHistoryShowTimer = null;
     lapHistoryHideTimer = null;
+}
+
+function clearDriverProfileTimers() {
+    window.clearTimeout(driverProfileShowTimer);
+    window.clearTimeout(driverProfileHideTimer);
+    window.clearTimeout(driverProfileRetryTimer);
+    driverProfileShowTimer = null;
+    driverProfileHideTimer = null;
+    driverProfileRetryTimer = null;
+}
+
+function closeDriverProfileTooltipImmediately() {
+    hoveredDriverProfileId = null;
+    visibleDriverProfileId = null;
+    isDriverProfileTooltipHovered = false;
+    clearDriverProfileTimers();
+    refreshDriverProfileTriggerStyles();
+    hideDriverProfileTooltip();
+}
+
+function getCountryFlagEmoji(countryCode) {
+    const normalized = String(countryCode || "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(normalized)) {
+        return "";
+    }
+
+    return Array.from(normalized)
+        .map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)))
+        .join("");
+}
+
+    function getCountryFlagImageUrl(countryCode) {
+        const normalized = String(countryCode || "").trim().toLowerCase();
+        return /^[a-z]{2}$/.test(normalized)
+        ? `https://flagcdn.com/24x18/${normalized}.png`
+        : "";
+    }
+
+    function resolveCountryCodeForDisplay(countryCode, countryName) {
+        const normalizedCode = String(countryCode || "").trim().toUpperCase();
+        if (/^[A-Z]{2}$/.test(normalizedCode)) {
+            return normalizedCode;
+        }
+
+        const normalizedName = String(countryName || "").trim().toLowerCase();
+        return COUNTRY_CODE_ALIASES[normalizedName] || "";
+    }
+
+function getCountryDisplayName(countryCode) {
+    const normalized = String(countryCode || "").trim().toUpperCase();
+    if (!normalized) {
+        return "";
+    }
+
+    return countryDisplayNames?.of(normalized) || normalized;
+}
+
+function formatCompactNumber(value) {
+    const numericValue = Number(value || 0);
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(numericValue);
+}
+
+function formatDistanceMeters(distanceMeters) {
+    const numericValue = Number(distanceMeters || 0);
+    if (!numericValue) {
+        return "0 km";
+    }
+
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(numericValue / 1000)} km`;
+}
+
+function formatRelativeTimestamp(value) {
+    if (!value) {
+        return "unknown";
+    }
+
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.getTime())) {
+        return "unknown";
+    }
+
+    const diffMs = Math.max(0, Date.now() - timestamp.getTime());
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffHours < 1) {
+        return "<1h ago";
+    }
+
+    if (diffDays < 1) {
+        return `${diffHours}h ago`;
+    }
+
+    return `${diffDays}d ago`;
+}
+
+function formatPubstatTrackCode(trackCode) {
+    const normalized = String(trackCode || "").trim();
+    if (!/^\d{3}$/.test(normalized)) {
+        return normalized;
+    }
+
+    const regionDigit = Number.parseInt(normalized[0], 10);
+    const layoutDigit = Number.parseInt(normalized[1], 10);
+    const variantDigit = Number.parseInt(normalized[2], 10);
+    const trackPrefix = PUBSTAT_TRACK_PREFIXES[regionDigit];
+    const trackSuffix = PUBSTAT_TRACK_SUFFIXES[variantDigit];
+
+    if (!trackPrefix || trackSuffix == null) {
+        return normalized;
+    }
+
+    return `${trackPrefix}${layoutDigit + 1}${trackSuffix}`;
+}
+
+function formatDriverProfileLastCombo(trackCode, carCode) {
+    const formattedTrack = formatPubstatTrackCode(trackCode) || "-";
+    const formattedCar = String(carCode || "").trim();
+    return formattedCar ? `${formattedTrack} ${formattedCar}` : formattedTrack;
+}
+
+function escapeHtml(value) {
+    return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+function appendLfsHtmlSegment(segments, text, color) {
+    if (!text) {
+        return;
+    }
+
+    const safeText = escapeHtml(text);
+    if (!color) {
+        segments.push(safeText);
+        return;
+    }
+
+    segments.push(`<span style="color:${color}">${safeText}</span>`);
+}
+
+function convertLfsTextToHtml(text) {
+    const input = String(text || "");
+    if (!input) {
+        return "";
+    }
+
+    const segments = [];
+    let currentColor = /\^[0-9]/.test(input) ? LFS_DEFAULT_COLOR : null;
+    let buffer = "";
+
+    for (let index = 0; index < input.length; index += 1) {
+        const currentChar = input[index];
+        const nextChar = input[index + 1];
+
+        if (currentChar === "^" && nextChar) {
+            if (Object.prototype.hasOwnProperty.call(LFS_COLOR_MAP, nextChar)) {
+                appendLfsHtmlSegment(segments, buffer, currentColor);
+                buffer = "";
+                currentColor = LFS_COLOR_MAP[nextChar];
+                index += 1;
+                continue;
+            }
+
+            if (nextChar === "9") {
+                appendLfsHtmlSegment(segments, buffer, currentColor);
+                buffer = "";
+                currentColor = /\^[0-9]/.test(input) ? LFS_DEFAULT_COLOR : null;
+                index += 1;
+                continue;
+            }
+
+            if (Object.prototype.hasOwnProperty.call(LFS_ESCAPE_MAP, nextChar)) {
+                buffer += LFS_ESCAPE_MAP[nextChar];
+                index += 1;
+                continue;
+            }
+        }
+
+        buffer += currentChar;
+    }
+
+    appendLfsHtmlSegment(segments, buffer, currentColor);
+    return segments.join("");
+}
+
+function isDriverProfileHoverArea(element) {
+    if (!(element instanceof Element)) {
+        return false;
+    }
+
+    return Boolean(
+        element.closest("#driver-profile-tooltip") ||
+        element.closest("[data-driver-profile-id]")
+    );
+}
+
+function renderCountryFlagBadge(countryCode, countryLabel, options = {}) {
+    const normalizedLabel = String(countryLabel || "").trim() || "Country unavailable";
+    const flagImageUrl = getCountryFlagImageUrl(countryCode);
+
+    if (flagImageUrl) {
+        return `<span class="driver-flag-badge" title="${normalizedLabel}"><img class="driver-flag-image" src="${flagImageUrl}" alt="${normalizedLabel} flag" loading="lazy" decoding="async"></span>`;
+    }
+
+    if (options.isPending) {
+        return '<span class="driver-flag-badge is-pending" title="Loading driver profile">...</span>';
+    }
+
+    return `<span class="driver-flag-badge is-unknown" title="Country unavailable"></span>`;
+}
+
+function renderDriverIdentity(driver) {
+    const countryName = String(driver.countryName || "");
+    const countryCode = resolveCountryCodeForDisplay(driver.countryCode, countryName);
+    const countryDisplayName = getCountryDisplayName(countryCode) || countryName;
+    const hasProfileTrigger = Boolean(driver.username);
+    const triggerClassName = `driver-profile-trigger${hasProfileTrigger ? " is-enabled" : ""}`;
+    const flagMarkup = hasProfileTrigger
+        ? renderCountryFlagBadge(countryCode, countryDisplayName || countryCode, { isPending: driver.driverProfilePending })
+        : "";
+
+    return `
+        <div class="${triggerClassName}">
+            ${flagMarkup}
+            <div class="driver-profile-copy">
+                <div class="driver-profile-name">${driver.nameHtml || driver.name || "-"}</div>
+            </div>
+        </div>`;
 }
 
 function refreshLapHistoryTriggerStyles() {
@@ -205,6 +500,76 @@ function refreshLapHistoryTriggerStyles() {
         trigger.classList.toggle("is-hovered", driverId === hoveredLapHistoryDriverId);
         trigger.classList.toggle("is-active", driverId === visibleLapHistoryDriverId);
     });
+}
+
+function refreshDriverProfileTriggerStyles() {
+    document.querySelectorAll("[data-driver-profile-id]").forEach((trigger) => {
+        const driverId = String(trigger.dataset.driverProfileId || "");
+        trigger.classList.toggle("is-hovered", driverId === hoveredDriverProfileId);
+        trigger.classList.toggle("is-active", driverId === visibleDriverProfileId);
+    });
+}
+
+function scheduleDriverProfileRetry(driverId) {
+    window.clearTimeout(driverProfileRetryTimer);
+
+    driverProfileRetryTimer = window.setTimeout(() => {
+        if (visibleDriverProfileId !== String(driverId)) {
+            return;
+        }
+
+        const driver = getDriverById(driverId);
+        if (!driver) {
+            return;
+        }
+
+        ensureDriverProfile(driver, true);
+    }, DRIVER_PROFILE_RETRY_DELAY_MS);
+}
+
+function setDriverProfileHoverTarget(driverId) {
+    const nextDriverId = driverId ? String(driverId) : null;
+
+    if (hoveredDriverProfileId === nextDriverId) {
+        if (nextDriverId && visibleDriverProfileId === nextDriverId) {
+            updateDriverProfileTooltip();
+        }
+
+        refreshDriverProfileTriggerStyles();
+        return;
+    }
+
+    hoveredDriverProfileId = nextDriverId;
+    refreshDriverProfileTriggerStyles();
+    window.clearTimeout(driverProfileShowTimer);
+    window.clearTimeout(driverProfileHideTimer);
+
+    if (!nextDriverId) {
+        driverProfileHideTimer = window.setTimeout(() => {
+            if (isDriverProfileTooltipHovered) {
+                return;
+            }
+
+            visibleDriverProfileId = null;
+            refreshDriverProfileTriggerStyles();
+            hideDriverProfileTooltip();
+        }, DRIVER_PROFILE_HIDE_DELAY_MS);
+        return;
+    }
+
+    if (visibleDriverProfileId === nextDriverId) {
+        updateDriverProfileTooltip();
+        return;
+    }
+
+    visibleDriverProfileId = nextDriverId;
+    refreshDriverProfileTriggerStyles();
+    const driver = getDriverById(nextDriverId);
+    if (driver) {
+        ensureDriverProfile(driver);
+    }
+
+    updateDriverProfileTooltip();
 }
 
 function setLapHistoryHoverTarget(driverId) {
@@ -271,6 +636,23 @@ function syncLapHistoryHoverState() {
     setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
 }
 
+function syncDriverProfileHoverState() {
+    if (lastPointerClientX == null || lastPointerClientY == null) {
+        return;
+    }
+
+    const hoveredElement = document.elementFromPoint(lastPointerClientX, lastPointerClientY);
+    const trigger = getDriverProfileTrigger(hoveredElement);
+    if (trigger) {
+        setDriverProfileHoverTarget(trigger.dataset.driverProfileId || null);
+        return;
+    }
+
+    if (!isDriverProfileHoverArea(hoveredElement)) {
+        setDriverProfileHoverTarget(null);
+    }
+}
+
 function getDriverRowFromEventTarget(target) {
     if (target instanceof Element) {
         return target.closest("tr[data-driver-id]");
@@ -300,6 +682,9 @@ function initializeTableHoverState() {
 
         const trigger = getLapHistoryTrigger(event.target);
         setLapHistoryHoverTarget(trigger?.dataset.lastLapDriverId || null);
+
+        const profileTrigger = getDriverProfileTrigger(event.target);
+        setDriverProfileHoverTarget(profileTrigger?.dataset.driverProfileId || null);
     });
 
     tableBody.addEventListener("pointerdown", (event) => {
@@ -315,17 +700,45 @@ function initializeTableHoverState() {
     tableBody.addEventListener("mouseleave", () => {
         setHoveredDriverId(null);
         setLapHistoryHoverTarget(null);
+        setDriverProfileHoverTarget(null);
     });
 
     window.addEventListener("scroll", () => {
         if (visibleLapHistoryDriverId) {
             updateLapHistoryTooltip();
         }
+
+        if (visibleDriverProfileId) {
+            updateDriverProfileTooltip();
+        }
     }, true);
 
     window.addEventListener("resize", () => {
         syncLapHistoryHoverState();
+        syncDriverProfileHoverState();
         updateLapHistoryTooltip();
+        updateDriverProfileTooltip();
+    });
+
+    document.addEventListener("mousemove", (event) => {
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+
+        if (!visibleDriverProfileId && !hoveredDriverProfileId) {
+            return;
+        }
+
+        const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
+        if (isDriverProfileHoverArea(hoveredElement)) {
+            const trigger = getDriverProfileTrigger(hoveredElement);
+            if (trigger) {
+                setDriverProfileHoverTarget(trigger.dataset.driverProfileId || null);
+            }
+
+            return;
+        }
+
+        setDriverProfileHoverTarget(null);
     });
 }
 
@@ -340,6 +753,236 @@ function refreshDriverHoverState() {
     });
 
     window.TrackMapController?.setHoveredDriverId(hoveredDriverId);
+}
+
+function getOrCreateDriverProfileTooltip() {
+    let tooltip = document.getElementById("driver-profile-tooltip");
+    if (tooltip) {
+        return tooltip;
+    }
+
+    tooltip = document.createElement("div");
+    tooltip.id = "driver-profile-tooltip";
+    tooltip.className = "driver-profile-tooltip";
+    tooltip.addEventListener("mouseenter", () => {
+        isDriverProfileTooltipHovered = true;
+        window.clearTimeout(driverProfileHideTimer);
+    });
+    tooltip.addEventListener("mousemove", (event) => {
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+    });
+    tooltip.addEventListener("mouseleave", (event) => {
+        isDriverProfileTooltipHovered = false;
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+
+        const nextTrigger = getDriverProfileTrigger(event.relatedTarget);
+        if (nextTrigger) {
+            setDriverProfileHoverTarget(nextTrigger.dataset.driverProfileId || null);
+            return;
+        }
+
+        closeDriverProfileTooltipImmediately();
+    });
+    document.body.appendChild(tooltip);
+    return tooltip;
+}
+
+function hideDriverProfileTooltip() {
+    const tooltip = document.getElementById("driver-profile-tooltip");
+    if (!tooltip) {
+        return;
+    }
+
+    clearDriverProfileTimers();
+    tooltip.classList.remove("is-visible");
+    tooltip.innerHTML = "";
+}
+
+function renderDriverProfileTooltip(driver, profile) {
+    const countryName = String(profile?.countryName || driver.countryName || "");
+    const countryCode = resolveCountryCodeForDisplay(profile?.countryCode || driver.countryCode, countryName);
+    const countryDisplayName = getCountryDisplayName(countryCode) || countryName;
+    const titleName = driver.mapLabelHtml || driver.nameHtml || driver.name || "Driver";
+    const subtitle = driver.username
+        ? `<span class="driver-profile-tooltip-subtitle">${driver.username}</span>`
+        : "";
+    const countryLine = `<div class="driver-profile-tooltip-pill${countryCode ? "" : " is-unavailable"}">${renderCountryFlagBadge(countryCode, countryDisplayName || countryCode)}${countryCode ? (countryDisplayName || countryCode) : "Country unavailable"}</div>`;
+
+    if (!driver.username) {
+        return `
+            <div class="driver-profile-tooltip-header">
+                <div class="driver-profile-tooltip-title">${titleName}</div>
+                ${subtitle}
+            </div>
+            <div class="driver-profile-tooltip-empty">No LFS username is available for this driver.</div>`;
+    }
+
+    if (!profile || profile.isLoading) {
+        return `
+            <div class="driver-profile-tooltip-header">
+                <div class="driver-profile-tooltip-title">${titleName}</div>
+                ${subtitle}
+            </div>
+            <div class="driver-profile-tooltip-empty">Loading driver profile...</div>`;
+    }
+
+    if (!profile.isAvailable) {
+        const waitingNote = profile.canRefresh && profile.isRefreshQueued
+            ? "The first profile fetch is queued and will appear automatically."
+            : (profile.unavailableReason || "Driver profile is unavailable.");
+
+        return `
+            <div class="driver-profile-tooltip-header">
+                <div class="driver-profile-tooltip-title">${titleName}</div>
+                ${subtitle}
+                ${countryLine}
+            </div>
+            <div class="driver-profile-tooltip-empty">${waitingNote}</div>`;
+    }
+
+    const stats = profile.stats || {};
+    const hostNameHtml = profile.currentOrLastHostNameHtml || convertLfsTextToHtml(stats.currentOrLastHostName || "") || "-";
+    const refreshedText = profile.lastSuccessAtUtc
+        ? `Refreshed ${formatRelativeTimestamp(profile.lastSuccessAtUtc)}`
+        : "Cached locally";
+
+    return `
+        <div class="driver-profile-tooltip-header">
+            <div>
+                <div class="driver-profile-tooltip-title">${titleName}</div>
+                ${subtitle}
+            </div>
+            ${countryLine}
+        </div>
+        <div class="driver-profile-tooltip-grid">
+            <div class="driver-profile-stat-card">
+                <span class="driver-profile-stat-label">Wins</span>
+                <span class="driver-profile-stat-value">${formatCompactNumber(stats.wins)}</span>
+            </div>
+            <div class="driver-profile-stat-card">
+                <span class="driver-profile-stat-label">Podiums</span>
+                <span class="driver-profile-stat-value">${formatCompactNumber(stats.podiums)}</span>
+            </div>
+            <div class="driver-profile-stat-card">
+                <span class="driver-profile-stat-label">Finishes</span>
+                <span class="driver-profile-stat-value">${formatCompactNumber(stats.finishes)}</span>
+            </div>
+            <div class="driver-profile-stat-card">
+                <span class="driver-profile-stat-label">Laps</span>
+                <span class="driver-profile-stat-value">${formatCompactNumber(stats.laps)}</span>
+            </div>
+            <div class="driver-profile-stat-card">
+                <span class="driver-profile-stat-label">Hosts</span>
+                <span class="driver-profile-stat-value">${formatCompactNumber(stats.hostsJoined)}</span>
+            </div>
+            <div class="driver-profile-stat-card">
+                <span class="driver-profile-stat-label">Distance</span>
+                <span class="driver-profile-stat-value">${formatDistanceMeters(stats.distanceMeters)}</span>
+            </div>
+        </div>
+        <div class="driver-profile-tooltip-meta">
+            <div class="driver-profile-tooltip-meta-row"><span>Last host</span><strong class="driver-profile-tooltip-host">${hostNameHtml}</strong></div>
+            <div class="driver-profile-tooltip-meta-row"><span>Last combo</span><strong>${formatDriverProfileLastCombo(stats.currentOrLastTrack, stats.currentOrLastCar)}</strong></div>
+            <div class="driver-profile-tooltip-meta-row"><span>LFS World</span><strong>${refreshedText}</strong></div>
+        </div>`;
+}
+
+function positionDriverProfileTooltip(trigger, tooltip) {
+    const rect = trigger.getBoundingClientRect();
+    const margin = 12;
+    const gap = DRIVER_PROFILE_TOOLTIP_GAP_PX;
+
+    tooltip.style.left = "0px";
+    tooltip.style.top = "0px";
+    tooltip.style.visibility = "hidden";
+    tooltip.classList.add("is-visible");
+
+    const tooltipWidth = tooltip.offsetWidth;
+    const tooltipHeight = tooltip.offsetHeight;
+    let left = rect.right + gap;
+
+    if (left + tooltipWidth > window.innerWidth - margin) {
+        left = rect.left - tooltipWidth - gap;
+    }
+
+    if (left < margin) {
+        left = Math.max(margin, window.innerWidth - tooltipWidth - margin);
+    }
+
+    const centeredTop = rect.top + (rect.height / 2) - (tooltipHeight / 2);
+    const top = Math.max(margin, Math.min(centeredTop, window.innerHeight - tooltipHeight - margin));
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.visibility = "visible";
+}
+
+function updateDriverProfileTooltip() {
+    const tooltip = getOrCreateDriverProfileTooltip();
+    if (!visibleDriverProfileId) {
+        hideDriverProfileTooltip();
+        return;
+    }
+
+    const trigger = document.querySelector(`[data-driver-profile-id="${visibleDriverProfileId}"]`);
+    const driver = getDriverById(visibleDriverProfileId);
+    if (!trigger || !driver) {
+        hideDriverProfileTooltip();
+        return;
+    }
+
+    const profile = driverProfileCache.get(String(driver.playerId));
+    tooltip.innerHTML = renderDriverProfileTooltip(driver, profile);
+    positionDriverProfileTooltip(trigger, tooltip);
+
+    if (profile?.canRefresh && profile?.isRefreshQueued && !profile?.isAvailable) {
+        scheduleDriverProfileRetry(driver.playerId);
+    }
+}
+
+async function ensureDriverProfile(driver, force = false) {
+    if (!driver?.username) {
+        return;
+    }
+
+    const cacheKey = String(driver.playerId);
+    const cached = driverProfileCache.get(cacheKey);
+    const hasFormattedHostName = typeof cached?.currentOrLastHostNameHtml === "string" && cached.currentOrLastHostNameHtml.length > 0;
+    if (!force && cached?.isAvailable && hasFormattedHostName && !cached?.isRefreshQueued) {
+        return;
+    }
+
+    if (cached?.isLoading) {
+        return;
+    }
+
+    driverProfileCache.set(cacheKey, {
+        ...(cached || {}),
+        playerId: Number(driver.playerId),
+        isLoading: true
+    });
+
+    try {
+        const profile = await window.signalRConnection?.invoke("GetDriverProfile", Number(driver.playerId));
+        driverProfileCache.set(cacheKey, profile);
+
+        if (visibleDriverProfileId === cacheKey) {
+            updateDriverProfileTooltip();
+        }
+    } catch (error) {
+        driverProfileCache.set(cacheKey, {
+            playerId: Number(driver.playerId),
+            canRefresh: false,
+            isAvailable: false,
+            unavailableReason: error?.message || String(error)
+        });
+
+        if (visibleDriverProfileId === cacheKey) {
+            updateDriverProfileTooltip();
+        }
+    }
 }
 
 function setHoveredDriverId(driverId) {
@@ -721,6 +1364,7 @@ function initializeConnection() {
         updateDriversTable(data);
         updateBestLaps(data);
         syncLapHistoryHoverState();
+        syncDriverProfileHoverState();
 
         if (visibleLapHistoryDriverId) {
             const driver = getDriverById(visibleLapHistoryDriverId);
@@ -730,6 +1374,7 @@ function initializeConnection() {
         }
 
         updateLapHistoryTooltip();
+        updateDriverProfileTooltip();
     });
 
     connection.start()
@@ -1045,6 +1690,10 @@ function updateDriversTable(data) {
         setHoveredDriverId(null);
     }
 
+    if (hoveredDriverProfileId && !playerIds.has(hoveredDriverProfileId)) {
+        setDriverProfileHoverTarget(null);
+    }
+
     if (!data.players || data.players.length === 0) {
         tableBody.innerHTML = `
             <tr class="driver-row">
@@ -1115,7 +1764,7 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3">
                     <div class="position-badge ${positionBadgeClass}">${position}</div>
                 </td>
-                <td class="px-4 py-3 font-semibold driver-name" ${driverNameStyle} data-driver-name-id="${driver.playerId}"></td>
+                <td class="px-4 py-3 font-semibold driver-name${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-4 py-3">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
@@ -1155,16 +1804,10 @@ function updateDriversTable(data) {
 
     tableBody.innerHTML = html;
 
-    // Apply colored driver names via innerHTML (safe: generated server-side with HtmlEncode)
-    data.players.forEach((driver) => {
-        const nameCell = tableBody.querySelector(`[data-driver-name-id="${driver.playerId}"]`);
-        if (nameCell) {
-            nameCell.innerHTML = driver.nameHtml || driver.name;
-        }
-    });
-
     refreshDriverHoverState();
     refreshLapHistoryTriggerStyles();
+    refreshDriverProfileTriggerStyles();
+    syncDriverProfileHoverState();
 }
 
 // ── Best Laps Update ──────────────────────────────────────
