@@ -715,6 +715,343 @@ public class Driver
             TimingPointElapsedTimes.Remove(lapNumber);
         }
     }
+
+    public Driver CreateArchiveCopy()
+    {
+        var copy = new Driver
+        {
+            PlayerId = PlayerId,
+            Name = Name,
+            Username = Username,
+            NameHtml = NameHtml,
+            CarName = CarName,
+            SkinName = SkinName,
+            TyreTypes = TyreTypes.ToArray(),
+            FuelPercent = FuelPercent,
+            DriverColor = DriverColor,
+            PitStops = PitStops,
+            ConnectionId = ConnectionId,
+            IsInPitLane = IsInPitLane,
+            IsPitStopActive = IsPitStopActive,
+            LastPitLaneFact = LastPitLaneFact,
+            LastPitStopTimeMs = LastPitStopTimeMs,
+            PitLaneEnteredAtUtc = PitLaneEnteredAtUtc,
+            LastPitLaneTimeMs = LastPitLaneTimeMs,
+            LastPitStopFuelAddPercent = LastPitStopFuelAddPercent,
+            LastPitTyresChanged = LastPitTyresChanged.ToArray(),
+            LapsCompleted = LapsCompleted,
+            LastTimingPoint = LastTimingPoint == null
+                ? null
+                : new TimingPointSnapshot
+                {
+                    LapNumber = LastTimingPoint.LapNumber,
+                    TimingPointIndex = LastTimingPoint.TimingPointIndex,
+                    ElapsedTimeMs = LastTimingPoint.ElapsedTimeMs
+                },
+            CurrentRacePosition = CurrentRacePosition,
+            CurrentTrackNode = CurrentTrackNode,
+            CurrentTrackLap = CurrentTrackLap,
+            HasWorldPosition = HasWorldPosition,
+            WorldX = WorldX,
+            WorldY = WorldY,
+            CurrentHeading = CurrentHeading,
+            TopSpeedKmh = TopSpeedKmh,
+            LastLiveTelemetryAtUtc = LastLiveTelemetryAtUtc,
+            LapHistory = LapHistory.Select(CloneLapData).ToList(),
+            PersonalBestLap = PersonalBestLap == null ? null : CloneLapData(PersonalBestLap),
+            PersonalBestSectors = PersonalBestSectors.ToDictionary(pair => pair.Key, pair => pair.Value),
+            OfficialResult = OfficialResult == null ? null : CloneOfficialResult(OfficialResult)
+        };
+
+        foreach (var pair in CurrentLapSectors)
+        {
+            copy.CurrentLapSectors[pair.Key] = CloneSectorTime(pair.Value);
+        }
+
+        foreach (var pair in CurrentLapSplitTimes)
+        {
+            copy.CurrentLapSplitTimes[pair.Key] = pair.Value;
+        }
+
+        foreach (var lapTimingPoints in TimingPointElapsedTimes)
+        {
+            copy.TimingPointElapsedTimes[lapTimingPoints.Key] = lapTimingPoints.Value
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+        }
+
+        return copy;
+    }
+
+    public void MergeArchivedState(Driver archived)
+    {
+        if (archived == null)
+        {
+            return;
+        }
+
+        if (IsPlaceholderDriverName(Name) && !string.IsNullOrWhiteSpace(archived.Name))
+        {
+            Name = archived.Name;
+            NameHtml = archived.NameHtml;
+        }
+
+        if (string.IsNullOrWhiteSpace(Username) && !string.IsNullOrWhiteSpace(archived.Username))
+        {
+            Username = archived.Username;
+        }
+
+        if ((string.IsNullOrWhiteSpace(CarName) || CarName == "???") && !string.IsNullOrWhiteSpace(archived.CarName))
+        {
+            CarName = archived.CarName;
+        }
+
+        if (string.IsNullOrWhiteSpace(SkinName) && !string.IsNullOrWhiteSpace(archived.SkinName))
+        {
+            SkinName = archived.SkinName;
+        }
+
+        if ((TyreTypes == null || TyreTypes.Length == 0 || TyreTypes.All(tyre => tyre == 0))
+            && archived.TyreTypes.Length > 0)
+        {
+            TyreTypes = archived.TyreTypes.ToArray();
+        }
+
+        if (!FuelPercent.HasValue && archived.FuelPercent.HasValue)
+        {
+            FuelPercent = archived.FuelPercent;
+        }
+
+        if (DriverColor == "#9CA3AF" && archived.DriverColor != "#9CA3AF")
+        {
+            DriverColor = archived.DriverColor;
+        }
+
+        PitStops = Math.Max(PitStops, archived.PitStops);
+        LapsCompleted = Math.Max(LapsCompleted, archived.LapsCompleted);
+        TopSpeedKmh = Math.Max(TopSpeedKmh, archived.TopSpeedKmh);
+
+        if (!HasWorldPosition && archived.HasWorldPosition)
+        {
+            HasWorldPosition = true;
+            WorldX = archived.WorldX;
+            WorldY = archived.WorldY;
+            CurrentHeading = archived.CurrentHeading;
+            LastLiveTelemetryAtUtc = archived.LastLiveTelemetryAtUtc;
+        }
+
+        if (LastTimingPoint == null || IsTimingPointLater(archived.LastTimingPoint, LastTimingPoint))
+        {
+            LastTimingPoint = archived.LastTimingPoint == null
+                ? LastTimingPoint
+                : new TimingPointSnapshot
+                {
+                    LapNumber = archived.LastTimingPoint.LapNumber,
+                    TimingPointIndex = archived.LastTimingPoint.TimingPointIndex,
+                    ElapsedTimeMs = archived.LastTimingPoint.ElapsedTimeMs
+                };
+        }
+
+        if (!IsInPitLane && archived.IsInPitLane)
+        {
+            IsInPitLane = true;
+            LastPitLaneFact = archived.LastPitLaneFact;
+            PitLaneEnteredAtUtc = archived.PitLaneEnteredAtUtc;
+        }
+
+        if (!IsPitStopActive && archived.IsPitStopActive)
+        {
+            IsPitStopActive = true;
+        }
+
+        LastPitStopTimeMs = ChooseLatestValue(LastPitStopTimeMs, archived.LastPitStopTimeMs);
+        LastPitLaneTimeMs = ChooseLatestValue(LastPitLaneTimeMs, archived.LastPitLaneTimeMs);
+        LastPitStopFuelAddPercent ??= archived.LastPitStopFuelAddPercent;
+
+        if ((LastPitTyresChanged == null || LastPitTyresChanged.All(tyre => tyre == 0))
+            && archived.LastPitTyresChanged.Length > 0)
+        {
+            LastPitTyresChanged = archived.LastPitTyresChanged.ToArray();
+        }
+
+        if (OfficialResult == null && archived.OfficialResult != null)
+        {
+            OfficialResult = CloneOfficialResult(archived.OfficialResult);
+        }
+
+        foreach (var pair in archived.CurrentLapSectors)
+        {
+            if (!CurrentLapSectors.ContainsKey(pair.Key))
+            {
+                CurrentLapSectors[pair.Key] = CloneSectorTime(pair.Value);
+            }
+        }
+
+        foreach (var pair in archived.CurrentLapSplitTimes)
+        {
+            CurrentLapSplitTimes.TryAdd(pair.Key, pair.Value);
+        }
+
+        foreach (var lapTimingPoints in archived.TimingPointElapsedTimes)
+        {
+            if (!TimingPointElapsedTimes.TryGetValue(lapTimingPoints.Key, out var existingTimingPoints))
+            {
+                TimingPointElapsedTimes[lapTimingPoints.Key] = lapTimingPoints.Value
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                continue;
+            }
+
+            foreach (var timingPoint in lapTimingPoints.Value)
+            {
+                existingTimingPoints[timingPoint.Key] = timingPoint.Value;
+            }
+        }
+
+        LapHistory = LapHistory
+            .Concat(archived.LapHistory.Select(CloneLapData))
+            .GroupBy(lap => new { lap.LapNumber, lap.ElapsedTimeMs })
+            .Select(group => group.Aggregate(ChoosePreferredLap))
+            .OrderBy(lap => lap.LapNumber)
+            .ThenBy(lap => lap.ElapsedTimeMs)
+            .ToList();
+
+        RecalculatePersonalBestData();
+    }
+
+    private void RecalculatePersonalBestData()
+    {
+        PersonalBestLap = null;
+        PersonalBestSectors = new Dictionary<int, uint>();
+
+        foreach (var lap in LapHistory.Where(lap => lap.IsValid))
+        {
+            if (PersonalBestLap == null || lap.GetAdjustedTime() < PersonalBestLap.GetAdjustedTime())
+            {
+                PersonalBestLap = CloneLapData(lap);
+            }
+
+            foreach (var sector in lap.Sectors.Values)
+            {
+                if (!PersonalBestSectors.TryGetValue(sector.SectorNumber, out var bestSectorTime) || sector.TimeMs < bestSectorTime)
+                {
+                    PersonalBestSectors[sector.SectorNumber] = sector.TimeMs;
+                }
+            }
+        }
+    }
+
+    private static uint? ChooseLatestValue(uint? currentValue, uint? archivedValue)
+    {
+        if (!archivedValue.HasValue)
+        {
+            return currentValue;
+        }
+
+        if (!currentValue.HasValue)
+        {
+            return archivedValue;
+        }
+
+        return Math.Max(currentValue.Value, archivedValue.Value);
+    }
+
+    private static bool IsTimingPointLater(TimingPointSnapshot? candidate, TimingPointSnapshot? baseline)
+    {
+        if (candidate == null)
+        {
+            return false;
+        }
+
+        if (baseline == null)
+        {
+            return true;
+        }
+
+        if (candidate.LapNumber != baseline.LapNumber)
+        {
+            return candidate.LapNumber > baseline.LapNumber;
+        }
+
+        if (candidate.TimingPointIndex != baseline.TimingPointIndex)
+        {
+            return candidate.TimingPointIndex > baseline.TimingPointIndex;
+        }
+
+        return candidate.ElapsedTimeMs > baseline.ElapsedTimeMs;
+    }
+
+    private static LapData ChoosePreferredLap(LapData current, LapData candidate)
+    {
+        if (candidate.IsValid != current.IsValid)
+        {
+            return candidate.IsValid ? candidate : current;
+        }
+
+        if (candidate.Sectors.Count != current.Sectors.Count)
+        {
+            return candidate.Sectors.Count > current.Sectors.Count ? candidate : current;
+        }
+
+        if (candidate.LapTimeMs != current.LapTimeMs)
+        {
+            return candidate.LapTimeMs > current.LapTimeMs ? candidate : current;
+        }
+
+        return candidate.RecordedAt >= current.RecordedAt ? candidate : current;
+    }
+
+    private static LapData CloneLapData(LapData lap)
+    {
+        return new LapData
+        {
+            LapNumber = lap.LapNumber,
+            LapTimeMs = lap.LapTimeMs,
+            ElapsedTimeMs = lap.ElapsedTimeMs,
+            Sectors = lap.Sectors.ToDictionary(pair => pair.Key, pair => CloneSectorTime(pair.Value)),
+            IsValid = lap.IsValid,
+            PitStops = lap.PitStops,
+            PenaltyMs = lap.PenaltyMs,
+            Gear = lap.Gear,
+            RecordedAt = lap.RecordedAt
+        };
+    }
+
+    private static SectorTime CloneSectorTime(SectorTime sector)
+    {
+        return new SectorTime
+        {
+            SectorNumber = sector.SectorNumber,
+            TimeMs = sector.TimeMs,
+            IsValid = sector.IsValid
+        };
+    }
+
+    private static OfficialResult CloneOfficialResult(OfficialResult officialResult)
+    {
+        return new OfficialResult
+        {
+            Kind = officialResult.Kind,
+            TotalTimeMs = officialResult.TotalTimeMs,
+            BestLapTimeMs = officialResult.BestLapTimeMs,
+            NumStops = officialResult.NumStops,
+            LapsDone = officialResult.LapsDone,
+            Flags = officialResult.Flags,
+            ConfirmFlags = officialResult.ConfirmFlags,
+            ResultNum = officialResult.ResultNum,
+            NumRes = officialResult.NumRes,
+            PenaltySeconds = officialResult.PenaltySeconds,
+            PositionPoints = officialResult.PositionPoints,
+            PolePositionBonusPoints = officialResult.PolePositionBonusPoints,
+            FastestLapBonusPoints = officialResult.FastestLapBonusPoints,
+            HighestClimberBonusPoints = officialResult.HighestClimberBonusPoints
+        };
+    }
+
+    private static bool IsPlaceholderDriverName(string? name)
+    {
+        return string.IsNullOrWhiteSpace(name)
+            || name.StartsWith("Unknown Driver", StringComparison.Ordinal)
+            || name.StartsWith("Driver #", StringComparison.Ordinal);
+    }
 }
 
 /// <summary>
@@ -728,6 +1065,7 @@ public class RaceSession
     private readonly List<ChatMessageEntry> _chatMessages = new();
     private readonly Dictionary<int, TrackMapNodeSample> _trackMapNodes = new();
     private readonly Dictionary<string, OfficialResultIndexEntry> _officialResultsByUsername = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Driver> _departedDriversByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<byte, int> _raceStartPositionsByPlayerId = new();
     private readonly Dictionary<string, int> _raceStartPositionsByUsername = new(StringComparer.OrdinalIgnoreCase);
     private uint _trackMapRevision;
@@ -845,7 +1183,7 @@ public class RaceSession
             {
                 var result = new Dictionary<int, uint>();
 
-                foreach (var driver in Players.Values)
+                foreach (var driver in GetArchiveDriversLocked())
                 {
                     foreach (var kvp in driver.PersonalBestSectors)
                     {
@@ -873,7 +1211,7 @@ public class RaceSession
         {
             var result = new Dictionary<int, SessionBestSectorInfo>();
 
-            foreach (var driver in Players.Values)
+            foreach (var driver in GetArchiveDriversLocked())
             {
                 foreach (var kvp in driver.PersonalBestSectors)
                 {
@@ -1019,6 +1357,7 @@ public class RaceSession
     {
         lock (_playersLock)
         {
+            MergeDepartedDriverInto(driver);
             Players[driver.PlayerId] = driver;
 
             if (TryGetOfficialResultEntry(driver.PlayerId, driver.Username, out var officialResultEntry))
@@ -1049,6 +1388,7 @@ public class RaceSession
         {
             if (Players.TryGetValue(playerId, out var driver))
             {
+                StoreDepartedDriver(driver);
                 PersistOfficialResult(driver);
                 Players.Remove(playerId);
             }
@@ -1071,6 +1411,7 @@ public class RaceSession
             {
                 if (Players.TryGetValue(playerId, out var driver))
                 {
+                    StoreDepartedDriver(driver);
                     PersistOfficialResult(driver);
                 }
 
@@ -1385,6 +1726,7 @@ public class RaceSession
             _chatMessages.Clear();
             _trackMapNodes.Clear();
             _officialResultsByUsername.Clear();
+            _departedDriversByKey.Clear();
             _raceStartPositionsByPlayerId.Clear();
             _raceStartPositionsByUsername.Clear();
             _trackMapSortOrder = 0;
@@ -1476,7 +1818,8 @@ public class RaceSession
     {
         lock (_playersLock)
         {
-            var sessionBestSectorInfos = GetSessionBestSectorInfos();
+            var archiveDrivers = GetArchiveDriversLocked();
+            var sessionBestSectorInfos = BuildSessionBestSectorInfos(archiveDrivers);
             var snapshot = new SessionArchiveSnapshot
             {
                 SessionId = SessionId,
@@ -1520,7 +1863,7 @@ public class RaceSession
                     .ToList()
             };
 
-            snapshot.Drivers = Players.Values
+            snapshot.Drivers = archiveDrivers
                 .OrderBy(driver => driver.CurrentRacePosition > 0 ? 0 : 1)
                 .ThenBy(driver => driver.CurrentRacePosition == 0 ? byte.MaxValue : driver.CurrentRacePosition)
                 .ThenBy(driver => driver.Name)
@@ -1561,6 +1904,127 @@ public class RaceSession
             return snapshot;
         }
     }
+
+    private void StoreDepartedDriver(Driver driver)
+    {
+        foreach (var key in GetDriverArchiveKeys(driver.PlayerId, driver.Username))
+        {
+            if (_departedDriversByKey.TryGetValue(key, out var existingDriver))
+            {
+                existingDriver.MergeArchivedState(driver);
+            }
+            else
+            {
+                _departedDriversByKey[key] = driver.CreateArchiveCopy();
+            }
+        }
+    }
+
+    private void MergeDepartedDriverInto(Driver driver)
+    {
+        var mergedSnapshot = default(Driver);
+
+        foreach (var key in GetDriverArchiveKeys(driver.PlayerId, driver.Username))
+        {
+            if (!_departedDriversByKey.TryGetValue(key, out var departedDriver))
+            {
+                continue;
+            }
+
+            mergedSnapshot ??= departedDriver.CreateArchiveCopy();
+            if (!ReferenceEquals(mergedSnapshot, departedDriver))
+            {
+                mergedSnapshot.MergeArchivedState(departedDriver);
+            }
+
+            _departedDriversByKey.Remove(key);
+        }
+
+        if (mergedSnapshot != null)
+        {
+            driver.MergeArchivedState(mergedSnapshot);
+        }
+    }
+
+    private List<Driver> GetArchiveDriversLocked()
+    {
+        var combinedDrivers = new Dictionary<string, Driver>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var driver in _departedDriversByKey.Values)
+        {
+            var key = CreateDriverArchiveKey(driver.PlayerId, driver.Username);
+            if (!combinedDrivers.ContainsKey(key))
+            {
+                combinedDrivers[key] = driver.CreateArchiveCopy();
+            }
+        }
+
+        foreach (var driver in Players.Values)
+        {
+            var key = CreateDriverArchiveKey(driver.PlayerId, driver.Username);
+            if (combinedDrivers.TryGetValue(key, out var archivedDriver))
+            {
+                var mergedDriver = driver.CreateArchiveCopy();
+                mergedDriver.MergeArchivedState(archivedDriver);
+                combinedDrivers[key] = mergedDriver;
+                continue;
+            }
+
+            combinedDrivers[key] = driver.CreateArchiveCopy();
+        }
+
+        return combinedDrivers.Values.ToList();
+    }
+
+    private static Dictionary<int, SessionBestSectorInfo> BuildSessionBestSectorInfos(IEnumerable<Driver> drivers)
+    {
+        var result = new Dictionary<int, SessionBestSectorInfo>();
+
+        foreach (var driver in drivers)
+        {
+            foreach (var kvp in driver.PersonalBestSectors)
+            {
+                var sectorNumber = kvp.Key;
+                var sectorTime = kvp.Value;
+
+                if (!result.TryGetValue(sectorNumber, out var currentBest) || sectorTime < currentBest.TimeMs)
+                {
+                    result[sectorNumber] = new SessionBestSectorInfo
+                    {
+                        TimeMs = sectorTime,
+                        AuthorNameHtml = driver.NameHtml,
+                        AuthorUsername = driver.Username
+                    };
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<string> GetDriverArchiveKeys(byte playerId, string username)
+    {
+        if (!string.IsNullOrWhiteSpace(username))
+        {
+            yield return CreateUsernameArchiveKey(username);
+        }
+
+        if (playerId != 0)
+        {
+            yield return CreatePlayerArchiveKey(playerId);
+        }
+    }
+
+    private static string CreateDriverArchiveKey(byte playerId, string username)
+    {
+        return !string.IsNullOrWhiteSpace(username)
+            ? CreateUsernameArchiveKey(username)
+            : CreatePlayerArchiveKey(playerId);
+    }
+
+    private static string CreateUsernameArchiveKey(string username) => $"user:{username.Trim()}";
+
+    private static string CreatePlayerArchiveKey(byte playerId) => $"plid:{playerId}";
 
     public void SetTrackIdentity(string trackName, string? layoutName = null)
     {
