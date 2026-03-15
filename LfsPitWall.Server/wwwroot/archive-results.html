@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LFS Pit Wall - Archive Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="min-h-screen p-4 sm:p-6">
+        <div class="max-w-7xl mx-auto">
+            <div class="mb-6">
+                <div class="app-header mb-4">
+                    <div class="app-header-brand">
+                        <img src="images/LFS_logo_plain.png" alt="LFS Logo" class="lfs-logo">
+                        <div>
+                            <h1 class="text-4xl font-bold mb-2">LFS Pit Wall</h1>
+                            <p class="text-gray-400">Archive Results Browser</p>
+                        </div>
+                    </div>
+                    <nav class="app-nav" aria-label="Primary navigation">
+                        <a class="app-nav-link" href="/">Live Timing</a>
+                        <a class="app-nav-link is-active" href="/archive-results">Results</a>
+                        <a class="app-nav-link" href="/setup-editor">Setup Editor</a>
+                    </nav>
+                    <div class="header-status-stack text-right">
+                        <div class="server-name-block" aria-label="Archive browser mode">
+                            <p class="server-name-label">Mode</p>
+                            <p class="server-name-value">JSON Archive Viewer</p>
+                        </div>
+                        <p class="live-datetime-inline" aria-label="Current local date and time">
+                            <span id="live-local-time">--:--:--</span>
+                            <span class="live-datetime-separator">•</span>
+                            <span id="live-local-date">-- --- ----</span>
+                        </p>
+                        <span class="setup-tool-badge archive-mode-badge">JS-only on the client</span>
+                    </div>
+                </div>
+            </div>
+
+            <section class="session-info rounded-lg p-5 border archive-hero-card mb-6">
+                <div class="archive-hero-grid">
+                    <div>
+                        <p class="setup-kicker">Archive Browser</p>
+                        <h2 class="archive-hero-title">Browse completed sessions, compare lap trends and drill into the details that matter</h2>
+                        <p class="archive-hero-copy">This viewer stays lightweight: the server only exposes indexed archive JSON, and the page renders everything with plain JavaScript. No database, no frontend framework, no wasted VPS budget.</p>
+                    </div>
+                    <div class="archive-overview-grid" id="archive-overview-grid">
+                        <div class="archive-overview-card">
+                            <p class="archive-overview-label">Archived Sessions</p>
+                            <p class="archive-overview-value" id="archive-total-sessions">0</p>
+                        </div>
+                        <div class="archive-overview-card">
+                            <p class="archive-overview-label">Tracks Covered</p>
+                            <p class="archive-overview-value" id="archive-total-tracks">0</p>
+                        </div>
+                        <div class="archive-overview-card archive-overview-card--wide">
+                            <p class="archive-overview-label">Latest Session</p>
+                            <p class="archive-overview-value archive-overview-value--compact" id="archive-latest-session">-</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="archive-layout">
+                <aside class="archive-sidebar">
+                    <section class="session-info rounded-lg p-4 border mb-6">
+                        <div class="archive-section-header">
+                            <div>
+                                <p class="setup-section-kicker">Catalog</p>
+                                <h3 class="setup-section-title">Find a session</h3>
+                            </div>
+                            <p class="setup-section-note">Filter first, then open a session to inspect laps, sectors and results.</p>
+                        </div>
+
+                        <form id="archive-filters-form" class="archive-filters-form">
+                            <label class="archive-filter-field">
+                                <span class="archive-filter-label">Search</span>
+                                <input id="archive-search-input" class="archive-filter-input" type="search" placeholder="Track, driver, winner...">
+                            </label>
+                            <label class="archive-filter-field">
+                                <span class="archive-filter-label">Track</span>
+                                <select id="archive-track-filter" class="archive-filter-select">
+                                    <option value="">All tracks</option>
+                                </select>
+                            </label>
+                            <label class="archive-filter-field">
+                                <span class="archive-filter-label">Session Type</span>
+                                <select id="archive-session-type-filter" class="archive-filter-select">
+                                    <option value="">All session types</option>
+                                </select>
+                            </label>
+                        </form>
+
+                        <div class="archive-catalog-meta" id="archive-catalog-meta">Loading archive catalog...</div>
+                        <div class="archive-session-list" id="archive-session-list">
+                            <div class="archive-empty-state">Loading archived sessions...</div>
+                        </div>
+                        <div class="archive-pagination" id="archive-pagination"></div>
+                    </section>
+                </aside>
+
+                <main class="archive-main-column">
+                    <div id="archive-detail-shell">
+                        <section class="session-info rounded-lg p-5 border archive-loading-panel">
+                            <div class="archive-empty-state archive-empty-state--large">Choose a session from the archive to explore its standings and lap comparison.</div>
+                        </section>
+                    </div>
+                </main>
+            </div>
+
+            <footer class="app-footer mt-8">
+                <div class="app-footer-grid">
+                    <div>
+                        <p class="app-footer-title">LFS Pit Wall <span id="app-version">v0.3</span></p>
+                        <p class="app-footer-text">Created by Kamileon. Open-source live timing for <a class="app-footer-link" id="app-data-source-link" href="https://www.lfs.net" target="_blank" rel="noreferrer">Live for Speed</a>.</p>
+                        <p class="app-footer-text app-footer-meta">
+                            <span id="app-project-type">ASP.NET Core web app with an HTML/JavaScript frontend.</span>
+                        </p>
+                    </div>
+                    <div>
+                        <p class="app-footer-title">Project</p>
+                        <p class="app-footer-text">Source code is available on <a class="app-footer-link" href="https://github.com/KamileonPL/lfs-pit-wall" target="_blank" rel="noreferrer">GitHub</a>.</p>
+                    </div>
+                    <div>
+                        <p class="app-footer-title">Support And Contribute</p>
+                        <p class="app-footer-text">If something does not work, <a class="app-footer-link" href="https://github.com/KamileonPL/lfs-pit-wall/issues" target="_blank" rel="noreferrer">open an issue</a>, ask on <a class="app-footer-link" href="https://discord.gg/d68BEY6" target="_blank" rel="noreferrer">Discord</a>, or fix it and send a <a class="app-footer-link" href="https://github.com/KamileonPL/lfs-pit-wall/pulls" target="_blank" rel="noreferrer">Pull Request</a>.</p>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="js/archive-results.js"></script>
+</body>
+</html>

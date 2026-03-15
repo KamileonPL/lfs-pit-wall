@@ -56,20 +56,22 @@ dotnet run --project "LfsPitWall.Server/LfsPitWall.Server.csproj"
 
 ## Current Focus
 
-`v0.2` is focused on a stronger live race-day dashboard with a production-ready map layer:
+`v0.3` focuses on a stronger live race-day dashboard plus a lightweight archive browser:
 
 - real-time session visibility with a lightweight web UI
 - a live track map that stays readable during racing, spectating, and pit activity
 - lower frontend overhead through cached map geometry and paused hidden-map rendering
 - a clean in-memory session model that is ready for future history and persistence features
 
-## New In v0.2
+## New In v0.3
 
 - Live standings can be toggled into a live track map view
 - Driver legend is compact, scrollable, and synchronized with visible map drivers
 - Map rendering ignores stale telemetry, pit-lane noise, and race-start grid distortion
 - Same-track race restarts preserve collected map geometry instead of rebuilding from scratch
 - Version metadata is surfaced consistently through the app footer and app metadata endpoint
+- Archived sessions can be browsed through a JS-first archive viewer with official LFS results when available
+- Archive indexing reuses cached file summaries to reduce repeated JSON parsing and disk I/O
 
 ## Project Structure
 
@@ -125,6 +127,18 @@ Important:
 <details>
 <summary><strong>Production Publish</strong></summary>
 
+### GitHub Actions Publish
+
+The repository includes a minimal GitHub Actions workflow at `.github/workflows/publish.yml`.
+
+It runs on every push to `main`, publishes self-contained production binaries for:
+
+- `win-x64`
+- `linux-x64`
+- `linux-arm64`
+
+Each target is uploaded as a separate GitHub Actions artifact.
+
 ### Standard Publish
 
 Windows:
@@ -171,6 +185,6 @@ Contributions are welcome.
 
 ## Status
 
-Current project version: `v0.2`
+Current project version: `v0.3`
 
 The project already works as a solid live timing dashboard with a usable live map, and is being extended carefully toward a broader pit-wall style tool.

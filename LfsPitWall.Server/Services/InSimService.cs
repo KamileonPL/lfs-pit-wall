@@ -1,6 +1,7 @@
 using LfsPitWall.Server.Helpers;
 using LfsPitWall.Server.InSim;
 using LfsPitWall.Server.Models;
+using LfsPitWall.Server.Models.Archive;
 using Microsoft.Extensions.Options;
 using System.Text;
 
@@ -28,6 +29,9 @@ public class InSimService : BackgroundService
     private readonly int _port;
     private readonly string _adminPassword;
     private readonly string _insimName;
+    private readonly ChampionshipScoringOptions _championshipScoringOptions;
+    private readonly SessionArchiveWriter _sessionArchiveWriter;
+    private readonly ArchiveOptions _archiveOptions;
     private readonly PlayerOnboardingOptions _playerOnboardingOptions;
 
     private InSimConnection? _connection;
@@ -35,10 +39,12 @@ public class InSimService : BackgroundService
     private bool _useObservedSpatialTrackMapFallback;
     private int _collapsedNodeTraceCount;
     private byte? _referenceTrackMapPlayerId;
+    private DateTime _lastOfficialResultsRequestUtc = DateTime.MinValue;
 
     private const int KeepAliveIntervalMs = 30000;
+    private static readonly TimeSpan OfficialResultsRequestThrottle = TimeSpan.FromSeconds(2);
 
-    public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession, SessionLifecycleManager sessionLifecycleManager, IOptions<PlayerOnboardingOptions> playerOnboardingOptions)
+    public InSimService(ILogger<InSimService> logger, IConfiguration configuration, RaceSession raceSession, SessionLifecycleManager sessionLifecycleManager, IOptions<PlayerOnboardingOptions> playerOnboardingOptions, IOptions<ChampionshipScoringOptions> championshipScoringOptions, SessionArchiveWriter sessionArchiveWriter, IOptions<ArchiveOptions> archiveOptions)
     {
         _logger = logger;
         _raceSession = raceSession;
@@ -48,6 +54,9 @@ public class InSimService : BackgroundService
         _adminPassword = configuration["InSim:AdminPassword"] ?? string.Empty;
         _insimName = configuration["InSim:Name"] ?? "LFS Pit Wall";
         _playerOnboardingOptions = playerOnboardingOptions.Value;
+        _championshipScoringOptions = championshipScoringOptions.Value;
+        _sessionArchiveWriter = sessionArchiveWriter;
+        _archiveOptions = archiveOptions.Value;
 
         _dispatcher = new PacketDispatcher(_logger);
         RegisterHandlers();
@@ -59,6 +68,7 @@ public class InSimService : BackgroundService
     {
         // Core session management
         _dispatcher.Bind<IS_ISM>(InSimPacketType.ISP_ISM, HandleMultiplayerInfo);
+        _dispatcher.Bind<IS_TINY>(InSimPacketType.ISP_TINY, HandleTiny);
         _dispatcher.BindRaw(InSimPacketType.ISP_MSO, HandleMessageOut);
         _dispatcher.Bind<IS_STA>(InSimPacketType.ISP_STA, HandleSessionState);
         _dispatcher.Bind<IS_RST>(InSimPacketType.ISP_RST, HandleRaceStart);
@@ -75,11 +85,13 @@ public class InSimService : BackgroundService
         _dispatcher.Bind<IS_PIT>(InSimPacketType.ISP_PIT, HandlePitStopStart);
         _dispatcher.Bind<IS_PSF>(InSimPacketType.ISP_PSF, HandlePitStopFinish);
         _dispatcher.Bind<IS_PLA>(InSimPacketType.ISP_PLA, HandlePitLaneChange);
+        _dispatcher.Bind<IS_FIN>(InSimPacketType.ISP_FIN, HandleFinish);
+        _dispatcher.Bind<IS_RES>(InSimPacketType.ISP_RES, HandleResult);
+        _dispatcher.Bind<IS_REO>(InSimPacketType.ISP_REO, HandleReorder);
         _dispatcher.BindRaw(InSimPacketType.ISP_MCI, HandleMultiCarInfo);
 
         // Known packet types we don't need — suppress log noise
         _dispatcher.Suppress(
-            InSimPacketType.ISP_FIN,
             InSimPacketType.ISP_PEN,
             InSimPacketType.ISP_CCH,
             InSimPacketType.ISP_UCO
@@ -287,11 +299,50 @@ public class InSimService : BackgroundService
                 ReqI = reqId, SubT = (byte)TinyPacketType.TINY_RES
             }, CancellationToken.None);
 
-            _logger.LogDebug("📤 Sent info requests: ISM, SST, NCN, NPL, RST, RES");
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1, Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = reqId, SubT = (byte)TinyPacketType.TINY_REO
+            }, CancellationToken.None);
+
+            _logger.LogDebug("📤 Sent info requests: ISM, SST, NCN, NPL, RST, RES, REO");
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to send info requests");
+        }
+    }
+
+    private async Task RequestOfficialResultsAsync(string reason, bool force = false)
+    {
+        try
+        {
+            if (_connection?.IsConnected != true)
+            {
+                return;
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            if (!force && nowUtc - _lastOfficialResultsRequestUtc < OfficialResultsRequestThrottle)
+            {
+                return;
+            }
+
+            _lastOfficialResultsRequestUtc = nowUtc;
+
+            await _connection.SendAsync(new IS_TINY
+            {
+                Size = 1,
+                Type = (byte)InSimPacketType.ISP_TINY,
+                ReqI = (byte)nowUtc.Ticks,
+                SubT = (byte)TinyPacketType.TINY_RES
+            }, CancellationToken.None);
+
+            _logger.LogDebug("📤 Requested official results ({Reason})", reason);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to request official results ({Reason})", reason);
         }
     }
 
@@ -951,14 +1002,104 @@ public class InSimService : BackgroundService
         _raceSession.RemoveUsername(packet.UCID);
     }
 
+    private void HandleTiny(IS_TINY packet)
+    {
+        if (packet.SubT == (byte)TinyPacketType.TINY_REN || packet.SubT == (byte)TinyPacketType.TINY_CLR)
+        {
+            _ = RequestOfficialResultsAsync(((TinyPacketType)packet.SubT).ToString(), force: true);
+        }
+    }
+
+    /// <summary>
+    /// Handles IS_FIN packets so official classified results can be requested before session reset.
+    /// </summary>
+    private void HandleFinish(IS_FIN packet)
+    {
+        _logger.LogDebug(
+            "🏁 Finish notification: PLID {PLID} | Laps {LapsDone} | Stops {NumStops}",
+            packet.PLID,
+            packet.LapsDone,
+            packet.NumStops);
+
+        _ = RequestOfficialResultsAsync("finish-notification");
+    }
+
     /// <summary>
     /// Handles IS_RES (Result) packets - race results
     /// </summary>
     private void HandleResult(IS_RES packet)
     {
+        var username = LfsColorConverter.RemoveColorCodes(LfsColorConverter.Decode(packet.UName ?? Array.Empty<byte>())).Trim();
+        var driverName = DriverNameHelper.FormatPlayerName(LfsColorConverter.Decode(packet.PName ?? Array.Empty<byte>()));
+        var carName = DriverNameHelper.ParseCarName(packet.CName ?? Array.Empty<byte>());
+        var officialResult = new OfficialResult
+        {
+            Kind = _raceSession.SessionType == 1 ? OfficialResultKind.Qualifying : OfficialResultKind.Race,
+            TotalTimeMs = packet.TTime,
+            BestLapTimeMs = packet.BTime,
+            NumStops = packet.NumStops,
+            LapsDone = packet.LapsDone,
+            Flags = packet.Flags,
+            ConfirmFlags = packet.Confirm,
+            ResultNum = packet.ResultNum,
+            NumRes = packet.NumRes,
+            PenaltySeconds = packet.PSeconds,
+            PositionPoints = GetOfficialResultPositionPoints(packet.ResultNum)
+        };
+
+        _raceSession.ApplyOfficialResult(packet.PLID, username, driverName, carName, officialResult);
+        RecalculateOfficialResultBonuses();
+
         _logger.LogDebug(
-            "📊 Result: PLID {PLID} - Mode {Mode}",
-            packet.PLID, packet.Mode);
+            "📊 Official result: PLID {PLID} | User {Username} | Kind {Kind} | Pos {Position} | Points {Points}",
+            packet.PLID,
+            string.IsNullOrWhiteSpace(username) ? "-" : username,
+            officialResult.Kind,
+            officialResult.Position?.ToString() ?? "unclassified",
+            officialResult.TotalPoints);
+    }
+
+    private void HandleReorder(IS_REO packet)
+    {
+        if (_raceSession.SessionType != 2 || packet.NumP == 0 || packet.PLID == null)
+        {
+            return;
+        }
+
+        var orderedPlayerIds = packet.PLID
+            .Take(packet.NumP)
+            .Where(playerId => playerId != 0)
+            .ToList();
+
+        if (orderedPlayerIds.Count == 0)
+        {
+            return;
+        }
+
+        _raceSession.UpdateRaceStartOrder(orderedPlayerIds);
+        RecalculateOfficialResultBonuses();
+
+        _logger.LogDebug(
+            "📋 Stored race start order for {DriverCount} drivers",
+            orderedPlayerIds.Count);
+    }
+
+    private void RecalculateOfficialResultBonuses()
+    {
+        _raceSession.RecalculateOfficialResultBonuses(
+            _championshipScoringOptions.Bonuses.PolePosition,
+            _championshipScoringOptions.Bonuses.FastestLap,
+            _championshipScoringOptions.Bonuses.HighestClimber);
+    }
+
+    private int GetOfficialResultPositionPoints(byte resultNum)
+    {
+        if (resultNum == byte.MaxValue)
+        {
+            return 0;
+        }
+
+        return _championshipScoringOptions.GetPointsForPosition(resultNum + 1);
     }
 
     /// <summary>
@@ -1032,6 +1173,11 @@ public class InSimService : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        if (_archiveOptions.Enabled && _archiveOptions.WriteOnApplicationStop)
+        {
+            _sessionArchiveWriter.ArchiveCurrentSessionIfNeeded("application-stop");
+        }
+
         await CloseConnectionAsync();
         await base.StopAsync(cancellationToken);
     }

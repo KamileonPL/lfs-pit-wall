@@ -3,9 +3,9 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
-# Local configuration
+# LfsPitWall specific
 LfsPitWall.Server/appsettings.Development.json
-Docs/AppArchitecture.md
+LfsPitWall.Server/Archive/*
 
 # dotenv files
 .env
@@ -486,4 +486,5 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
 
