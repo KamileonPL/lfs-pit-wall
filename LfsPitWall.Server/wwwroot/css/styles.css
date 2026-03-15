@@ -198,6 +198,86 @@ body {
     border: 1px solid #404050;
 }
 
+.session-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.session-summary-cell {
+    min-width: 0;
+}
+
+.session-summary-track-name {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.2;
+}
+
+.session-time-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(160px, 1fr);
+    align-items: center;
+    gap: 16px;
+}
+
+.session-time-primary {
+    min-width: 0;
+    text-align: left;
+}
+
+.session-time-progress {
+    min-width: 0;
+    padding-left: 16px;
+    border-left: 1px solid rgba(156, 163, 175, 0.18);
+    text-align: left;
+}
+
+.session-time-progress-label {
+    margin: 0;
+    color: #9ca3af;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.session-time-progress-value {
+    margin: 4px 0 0;
+    color: #f8fafc;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+@media (max-width: 767px) {
+    .session-time-card {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .session-time-primary,
+    .session-time-progress {
+        text-align: center;
+    }
+
+    .session-time-progress {
+        padding-left: 0;
+        padding-top: 10px;
+        border-left: 0;
+        border-top: 1px solid rgba(156, 163, 175, 0.18);
+    }
+}
+
+@media (min-width: 640px) {
+    .session-summary-grid {
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .session-summary-cell--track {
+        grid-column: span 2;
+    }
+}
+
 .session-highlight-card {
     min-height: 132px;
 }

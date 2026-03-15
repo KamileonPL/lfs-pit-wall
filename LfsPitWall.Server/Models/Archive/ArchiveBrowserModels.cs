@@ -22,6 +22,8 @@ public class ArchiveSessionListItem
     public string SessionType { get; set; } = "Unknown";
     public byte SessionTypeId { get; set; }
     public string TrackName { get; set; } = "Unknown";
+    public string BaseTrackName { get; set; } = "Unknown";
+    public string LayoutName { get; set; } = "";
     public DateTime SessionStartedAtUtc { get; set; }
     public DateTime ArchivedAtUtc { get; set; }
     public int DriverCount { get; set; }

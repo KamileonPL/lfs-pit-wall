@@ -28,7 +28,9 @@ public static class SessionDataBuilder
         
         return new
         {
-            trackName = session.TrackName,
+            trackName = session.DisplayTrackName,
+            baseTrackName = session.TrackName,
+            layoutName = session.LayoutName,
             hostName = session.HostName,
             hostNameHtml = session.HostNameHtml,
             sessionType = session.GetSessionTypeString(),

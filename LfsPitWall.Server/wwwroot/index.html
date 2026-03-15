@@ -50,32 +50,28 @@
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 <div class="lg:col-span-2 session-info rounded-lg p-4 border">
                     <h3 class="text-gray-400 text-sm mb-3 font-semibold">📋 Session</h3>
-                    <div class="grid grid-cols-2 sm:grid-cols-7 gap-3">
-                        <div>
+                    <div class="session-summary-grid">
+                        <div class="session-summary-cell session-summary-cell--track">
                             <p class="text-gray-500 text-xs">Track</p>
-                            <p class="text-lg font-bold" id="track-name">Unknown</p>
+                            <p class="text-lg font-bold session-summary-track-name" id="track-name">Unknown</p>
                         </div>
-                        <div>
+                        <div class="session-summary-cell">
                             <p class="text-gray-500 text-xs">Session</p>
                             <p class="text-lg font-bold" id="session-type">-</p>
                         </div>
-                        <div>
+                        <div class="session-summary-cell">
                             <p class="text-gray-500 text-xs">Weather</p>
                             <p class="text-lg font-bold" id="weather-type">-</p>
                         </div>
-                        <div>
+                        <div class="session-summary-cell">
                             <p class="text-gray-500 text-xs">Wind</p>
                             <p class="text-lg font-bold" id="wind-type">-</p>
                         </div>
-                        <div>
+                        <div class="session-summary-cell">
                             <p class="text-gray-500 text-xs">Status</p>
                             <p class="text-lg font-bold" id="race-status">Idle</p>
                         </div>
-                        <div>
-                            <p class="text-gray-500 text-xs">Laps Completed</p>
-                            <p class="text-lg font-bold" id="max-laps">0</p>
-                        </div>
-                        <div>
+                        <div class="session-summary-cell">
                             <p class="text-gray-500 text-xs">Drivers</p>
                             <p class="text-lg font-bold" id="driver-count">0</p>
                         </div>
@@ -84,9 +80,15 @@
 
                 <div class="session-info rounded-lg p-4 border">
                     <h3 class="text-gray-400 text-sm mb-3 font-semibold">⏱️ Race Time</h3>
-                    <div class="text-center">
-                        <p class="text-2xl font-mono font-bold text-yellow-300" id="session-duration">00:00:00</p>
-                        <p class="text-xs text-gray-500 mt-2" id="session-estimated-remaining">Est. remaining: -</p>
+                    <div class="session-time-card">
+                        <div class="session-time-primary">
+                            <p class="text-2xl font-mono font-bold text-yellow-300" id="session-duration">00:00:00</p>
+                            <p class="text-xs text-gray-500 mt-2" id="session-estimated-remaining">Est. remaining: -</p>
+                        </div>
+                        <div class="session-time-progress">
+                            <p class="session-time-progress-label">Session Progress</p>
+                            <p class="session-time-progress-value" id="max-laps">0</p>
+                        </div>
                     </div>
                 </div>
             </div>
