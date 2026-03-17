@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using LfsPitWall.Server.Models;
 
@@ -19,6 +20,12 @@ public sealed class TvOverlayDirector
     private readonly HashSet<string> _subscribers = new(StringComparer.Ordinal);
     private readonly Dictionary<int, uint> _bestSectorTimes = new();
     private readonly List<OverlayPopupState> _activePopups = new();
+
+    // State tracking for event-based popups
+    private readonly Dictionary<byte, int> _lastDriverOrder = new();
+    private readonly Dictionary<byte, bool> _lastPitStatus = new();
+    private bool _lastRaceInProgress;
+
     private bool _isInitialized;
     private uint _bestLapTimeMs;
     private string _bestLapAuthorKey = string.Empty;
@@ -64,6 +71,12 @@ public sealed class TvOverlayDirector
         List<TvOverlayPopup> popups;
         lock (_sync)
         {
+            if (!_isInitialized)
+            {
+                SeedState(session, orderedDrivers, bestLapAuthorUsername, bestSectorInfos);
+            }
+
+            UpdateEventPopups(session, orderedDrivers, leader);
             UpdatePopupState(session.SessionBestLap, bestLapAuthorNameHtml, bestLapAuthorUsername, bestLapNumber, bestSectorInfos);
             PruneExpiredPopups();
             popups = _activePopups
@@ -365,7 +378,7 @@ public sealed class TvOverlayDirector
     {
         if (!_isInitialized)
         {
-            SeedState(bestLap, bestLapAuthorUsername, bestSectorInfos);
+            // SeedState has already been called earlier in BuildSnapshot.
             return;
         }
 
@@ -400,6 +413,83 @@ public sealed class TvOverlayDirector
         }
     }
 
+    private void UpdateEventPopups(RaceSession session, List<Driver> orderedDrivers, Driver? leader)
+    {
+        if (_lastRaceInProgress && !session.RaceInProgress)
+        {
+            // Race just finished
+            var leaderNameHtml = leader?.NameHtml ?? "Unknown";
+            EnqueuePopup(
+                "leader-finished",
+                "LEADER FINISHED",
+                "finish",
+                leaderNameHtml,
+                "Race complete");
+        }
+
+        _lastRaceInProgress = session.RaceInProgress;
+
+        if (session.SessionType == 2 && session.RaceInProgress)
+        {
+            for (var index = 0; index < orderedDrivers.Count; index++)
+            {
+                var driver = orderedDrivers[index];
+                if (_lastDriverOrder.TryGetValue(driver.PlayerId, out var previousIndex))
+                {
+                    if (index < previousIndex && index < 10)
+                    {
+                        var gained = previousIndex - index;
+                        EnqueuePopup(
+                            "overtake",
+                            "OVERTAKE",
+                            "overtake",
+                            driver.NameHtml,
+                            gained == 1 ? "+1 position" : $"+{gained} positions");
+                    }
+                }
+
+                _lastDriverOrder[driver.PlayerId] = index;
+            }
+        }
+
+        // Pit entry / exit detection
+        foreach (var driver in orderedDrivers)
+        {
+            var isInPit = !string.Equals(driver.GetPitStatus(), "Track", StringComparison.OrdinalIgnoreCase);
+            if (_lastPitStatus.TryGetValue(driver.PlayerId, out var wasInPit))
+            {
+                if (!wasInPit && isInPit)
+                {
+                    EnqueuePopup(
+                        "pit-entry",
+                        "PIT ENTRY",
+                        "pit",
+                        driver.NameHtml,
+                        "Entering pit lane");
+                }
+                else if (wasInPit && !isInPit)
+                {
+                    EnqueuePopup(
+                        "pit-exit",
+                        "PIT EXIT",
+                        "pit",
+                        driver.NameHtml,
+                        "Exiting pit lane");
+                }
+            }
+
+            _lastPitStatus[driver.PlayerId] = isInPit;
+        }
+
+        // Cleanup removed drivers from tracking dictionaries
+        var currentIds = orderedDrivers.Select(d => d.PlayerId).ToHashSet();
+        foreach (var playerId in _lastDriverOrder.Keys.Except(currentIds).ToList())
+        {
+            _lastDriverOrder.Remove(playerId);
+            _lastPitStatus.Remove(playerId);
+        }
+    }
+
     private static string BuildPopupAuthorHtml(string? username, string? nameHtml)
     {
         if (!string.IsNullOrWhiteSpace(nameHtml))
@@ -415,16 +505,27 @@ public sealed class TvOverlayDirector
         return "Unknown";
     }
 
-    private void SeedState(LapData? bestLap, string? bestLapAuthorUsername, Dictionary<int, SessionBestSectorInfo> bestSectorInfos)
+    private void SeedState(RaceSession session, List<Driver> orderedDrivers, string? bestLapAuthorUsername, Dictionary<int, SessionBestSectorInfo> bestSectorInfos)
     {
         _isInitialized = true;
-        _bestLapTimeMs = bestLap?.LapTimeMs ?? 0;
+        _bestLapTimeMs = session.SessionBestLap?.LapTimeMs ?? 0;
         _bestLapAuthorKey = bestLapAuthorUsername ?? string.Empty;
         _bestSectorTimes.Clear();
 
         foreach (var pair in bestSectorInfos)
         {
             _bestSectorTimes[pair.Key] = pair.Value.TimeMs;
+        }
+
+        _lastDriverOrder.Clear();
+        _lastPitStatus.Clear();
+        _lastRaceInProgress = session.RaceInProgress;
+
+        for (var index = 0; index < orderedDrivers.Count; index++)
+        {
+            var driver = orderedDrivers[index];
+            _lastDriverOrder[driver.PlayerId] = index;
+            _lastPitStatus[driver.PlayerId] = !string.Equals(driver.GetPitStatus(), "Track", StringComparison.OrdinalIgnoreCase);
         }
     }
 

@@ -322,6 +322,18 @@ body {
     background: linear-gradient(180deg, #6bc8ff, #6e87ff);
 }
 
+.tv-overlay-popup.is-overtake::before {
+    background: linear-gradient(180deg, #54d18f, #1db77a);
+}
+
+.tv-overlay-popup.is-pit::before {
+    background: linear-gradient(180deg, #f3c64d, #ff8457);
+}
+
+.tv-overlay-popup.is-finish::before {
+    background: linear-gradient(180deg, #ff6d6d, #ff3b3b);
+}
+
 .tv-overlay-popup-title {
     margin: 0 0 6px;
     color: var(--text-muted);
