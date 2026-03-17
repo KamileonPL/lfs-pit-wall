@@ -249,17 +249,23 @@ public sealed class TvOverlayDirector
         return Math.Clamp(session.SessionTimeMs / (session.QualifyingMins * 60000d), 0, 1);
     }
 
+    private static readonly OverlayMetricMode[] RaceMetricRotation =
+    {
+        OverlayMetricMode.Gap,
+        OverlayMetricMode.Gap,
+        OverlayMetricMode.Gap,
+        OverlayMetricMode.Delta,
+        OverlayMetricMode.LastLap,
+        OverlayMetricMode.BestLap,
+        OverlayMetricMode.Pits
+    };
+
     private static OverlayMetricMode GetMetricMode(byte sessionType, uint sessionTimeMs)
     {
         if (sessionType == 2)
         {
-            return ((sessionTimeMs / 1000 / RaceMetricCycleSeconds) % 4) switch
-            {
-                0 => OverlayMetricMode.Gap,
-                1 => OverlayMetricMode.Gap,
-                2 => OverlayMetricMode.Delta,
-                _ => OverlayMetricMode.Pits
-            };
+            var index = (int)((sessionTimeMs / 1000 / RaceMetricCycleSeconds) % RaceMetricRotation.Length);
+            return RaceMetricRotation[index];
         }
 
         return ((sessionTimeMs / 1000 / QualMetricCycleSeconds) % 3) switch
@@ -289,7 +295,7 @@ public sealed class TvOverlayDirector
         return metricMode switch
         {
             OverlayMetricMode.Delta => BuildDeltaMetric(driver, orderedDrivers, index),
-            OverlayMetricMode.Pits => driver.PitStops.ToString(),
+            OverlayMetricMode.Pits => BuildPitMetric(driver),
             OverlayMetricMode.LastLap => driver.LapHistory.Count > 0 ? FormatLapTime(driver.LapHistory[^1].LapTimeMs) : "-",
             OverlayMetricMode.BestLap => driver.PersonalBestLap != null ? FormatLapTime(driver.PersonalBestLap.GetAdjustedTime()) : "-",
             _ => index == 0 ? "LEADER" : cumulativeGapMs[index].HasValue ? FormatGap(cumulativeGapMs[index]!.Value) : "-"
@@ -349,6 +355,27 @@ public sealed class TvOverlayDirector
 
         var trimmed = carName.Trim();
         return trimmed.Length <= 4 ? trimmed.ToUpperInvariant() : trimmed[..4].ToUpperInvariant();
+    }
+
+    private static string BuildPitMetric(Driver driver)
+    {
+        var stops = driver.PitStops;
+        var stopText = stops.ToString();
+
+        var pitLaneTimeMs = driver.GetDisplayedPitLaneTimeMs(DateTime.UtcNow);
+        if (pitLaneTimeMs.HasValue)
+        {
+            stopText += $" ({FormatPitStopTime(pitLaneTimeMs.Value)})";
+        }
+
+        return stopText;
+    }
+
+    private static string FormatPitStopTime(uint pitTimeMs)
+    {
+        // Display as seconds with one decimal (e.g. 23.4s)
+        var seconds = pitTimeMs / 1000d;
+        return $"{seconds:0.0}s";
     }
 
     private static uint? GetGapToPreviousMs(Driver driver, Driver previousDriver)

@@ -10,6 +10,10 @@
     --accent-green: #54d18f;
     --accent-red: #ff6d6d;
     --accent-blue: #6bc8ff;
+
+    /* Width controls for left rail panels */
+    --overlay-rail-min: 320px;
+    --overlay-rail-max: 360px;
 }
 
 html,
@@ -47,7 +51,14 @@ body {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    width: clamp(320px, 23vw, 390px);
+    width: clamp(var(--overlay-rail-min), 23vw, var(--overlay-rail-max));
+}
+
+.tv-overlay-progress-card,
+.tv-overlay-standings-panel {
+    width: 100%;
+    max-width: var(--overlay-rail-max);
+    margin: 0 auto;
 }
 
 .tv-overlay-header {
