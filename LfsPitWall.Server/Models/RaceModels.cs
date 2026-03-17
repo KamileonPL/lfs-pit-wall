@@ -2126,6 +2126,22 @@ public class RaceSession
             : null;
     }
 
+    public int? GetDriverRaceStartPosition(byte playerId, string? username)
+    {
+        lock (_playersLock)
+        {
+            if (!string.IsNullOrWhiteSpace(username)
+                && _raceStartPositionsByUsername.TryGetValue(username, out var usernamePosition))
+            {
+                return usernamePosition;
+            }
+
+            return _raceStartPositionsByPlayerId.TryGetValue(playerId, out var playerPosition)
+                ? playerPosition
+                : null;
+        }
+    }
+
     private static string CreateSessionId() => $"session-{Guid.NewGuid():N}";
 
     /// <summary>

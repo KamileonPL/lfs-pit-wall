@@ -13,12 +13,14 @@ public class TimingHub : Hub
 {
     private readonly RaceSession _raceSession;
     private readonly DriverProfileService _driverProfileService;
+    private readonly TvOverlayDirector _tvOverlayDirector;
     private readonly ILogger<TimingHub> _logger;
 
-    public TimingHub(RaceSession raceSession, DriverProfileService driverProfileService, ILogger<TimingHub> logger)
+    public TimingHub(RaceSession raceSession, DriverProfileService driverProfileService, TvOverlayDirector tvOverlayDirector, ILogger<TimingHub> logger)
     {
         _raceSession = raceSession;
         _driverProfileService = driverProfileService;
+        _tvOverlayDirector = tvOverlayDirector;
         _logger = logger;
     }
 
@@ -36,6 +38,7 @@ public class TimingHub : Hub
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
+        _tvOverlayDirector.UnregisterSubscriber(Context.ConnectionId);
 
         if (exception != null)
             _logger.LogError(exception, "Client disconnection error");
@@ -48,6 +51,13 @@ public class TimingHub : Hub
         _logger.LogDebug("Client {ConnectionId} requested full update", Context.ConnectionId);
         var sessionData = SessionDataBuilder.Build(_raceSession, _driverProfileService);
         await Clients.Caller.SendAsync("ReceiveSessionUpdate", sessionData);
+    }
+
+    public async Task JoinTvOverlay()
+    {
+        _tvOverlayDirector.RegisterSubscriber(Context.ConnectionId);
+        await Groups.AddToGroupAsync(Context.ConnectionId, TvOverlayDirector.HubGroupName);
+        await Clients.Caller.SendAsync("ReceiveTvOverlayUpdate", _tvOverlayDirector.BuildSnapshot(_raceSession));
     }
 
     public Task<DriverProfileSnapshot> GetDriverProfile(byte playerId)

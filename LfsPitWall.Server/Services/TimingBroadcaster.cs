@@ -15,6 +15,7 @@ public class TimingBroadcaster : BackgroundService
     private readonly IHubContext<TimingHub> _hubContext;
     private readonly RaceSession _raceSession;
     private readonly DriverProfileService _driverProfileService;
+    private readonly TvOverlayDirector _tvOverlayDirector;
     private readonly ILogger<TimingBroadcaster> _logger;
     private readonly int _broadcastIntervalMs;
 
@@ -22,12 +23,14 @@ public class TimingBroadcaster : BackgroundService
         IHubContext<TimingHub> hubContext,
         RaceSession raceSession,
         DriverProfileService driverProfileService,
+        TvOverlayDirector tvOverlayDirector,
         ILogger<TimingBroadcaster> logger,
         IOptions<TelemetryOptions> telemetryOptions)
     {
         _hubContext = hubContext;
         _raceSession = raceSession;
         _driverProfileService = driverProfileService;
+        _tvOverlayDirector = tvOverlayDirector;
         _logger = logger;
         _broadcastIntervalMs = telemetryOptions.Value.GetClampedBroadcastIntervalMs();
     }
@@ -46,6 +49,13 @@ public class TimingBroadcaster : BackgroundService
                 {
                     var sessionData = SessionDataBuilder.Build(_raceSession, _driverProfileService);
                     await _hubContext.Clients.All.SendAsync("ReceiveSessionUpdate", sessionData, stoppingToken);
+
+                    if (_tvOverlayDirector.HasSubscribers)
+                    {
+                        var overlayData = _tvOverlayDirector.BuildSnapshot(_raceSession);
+                        await _hubContext.Clients.Group(TvOverlayDirector.HubGroupName)
+                            .SendAsync("ReceiveTvOverlayUpdate", overlayData, stoppingToken);
+                    }
                 }
                 catch (Exception ex)
                 {
