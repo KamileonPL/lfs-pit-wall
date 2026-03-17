@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LFS Pit Wall - TV Overlay</title>
+    <link rel="stylesheet" href="css/tv-overlay.css">
+</head>
+<body>
+    <main class="tv-overlay-root" aria-label="Live TV overlay">
+        <div class="tv-overlay-stage">
+            <div class="tv-overlay-left-rail">
+                <section class="tv-overlay-header">
+                    <div class="tv-overlay-progress-card">
+                        <div class="tv-overlay-progress-copy">
+                            <p class="tv-overlay-kicker" id="overlay-progress-title">RACE PROGRESS</p>
+                            <p class="tv-overlay-progress-value" id="overlay-progress-value">-</p>
+                            <p class="tv-overlay-progress-context" id="overlay-progress-context">TRACK • SESSION</p>
+                            <p class="tv-overlay-progress-detail" id="overlay-progress-detail">Waiting for data</p>
+                        </div>
+                        <div class="tv-overlay-progress-bar-shell">
+                            <div class="tv-overlay-progress-bar" id="overlay-progress-bar"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="tv-overlay-standings-panel" aria-label="TV overlay standings">
+                    <header class="tv-overlay-panel-header">
+                        <div>
+                            <p class="tv-overlay-panel-title">STANDINGS</p>
+                            <p class="tv-overlay-panel-subtitle" id="overlay-window-label">FULL FIELD</p>
+                        </div>
+                        <div class="tv-overlay-rotation-chip" id="overlay-rotation-label">INTERVAL</div>
+                    </header>
+                    <div class="tv-overlay-standings-list" id="overlay-standings-list">
+                        <div class="tv-overlay-empty-state">Waiting for live timing data...</div>
+                    </div>
+                </section>
+            </div>
+
+            <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+    <script src="js/tv-overlay.js"></script>
+</body>
+</html>

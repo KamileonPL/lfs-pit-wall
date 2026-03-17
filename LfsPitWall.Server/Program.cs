@@ -18,6 +18,7 @@ builder.Services.AddSingleton<RaceSession>();
 builder.Services.AddSingleton<SessionArchiveWriter>();
 builder.Services.AddSingleton<ArchiveBrowserService>();
 builder.Services.AddSingleton<SessionLifecycleManager>();
+builder.Services.AddSingleton<TvOverlayDirector>();
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -93,6 +94,7 @@ app.MapGet(
     });
 app.MapGet("/archive-results", () => Results.Redirect("/archive-results.html"));
 app.MapGet("/setup-editor", () => Results.Redirect("/setup-editor.html"));
+app.MapGet("/tv-overlay", () => Results.Redirect("/tv-overlay.html"));
 
 // Default route to index.html
 app.MapFallbackToFile("index.html");
