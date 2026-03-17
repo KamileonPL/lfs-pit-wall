@@ -10,7 +10,7 @@ public sealed class TvOverlayDirector
 
     private const int MaxVisibleEntries = 15;
     private const int PinnedEntries = 3;
-    private const int RotationWindowSeconds = 45;
+    private const int RotationWindowSeconds = 120;
     private const int RaceMetricCycleSeconds = 6;
     private const int QualMetricCycleSeconds = 7;
     private const int PopupLifetimeSeconds = 6;
