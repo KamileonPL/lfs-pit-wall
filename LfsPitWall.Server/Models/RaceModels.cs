@@ -1,3 +1,4 @@
+using System.Linq;
 using LfsPitWall.Server.Models.Archive;
 
 namespace LfsPitWall.Server.Models;
@@ -526,6 +527,43 @@ public class Driver
         CurrentHeading = heading;
         LastLiveTelemetryAtUtc = DateTime.UtcNow;
         UpdateTopSpeed(rawSpeed);
+    }
+
+    /// <summary>
+    /// Apply a telemetry snapshot copied from another driver instance.
+    /// Preserves the original telemetry timestamp and top speed value.
+    /// </summary>
+    public void ApplyTelemetrySnapshot(bool hasWorldPosition, int worldX, int worldY, ushort heading, double topSpeedKmh, DateTime? lastLiveTelemetryAtUtc)
+    {
+        HasWorldPosition = hasWorldPosition;
+        WorldX = worldX;
+        WorldY = worldY;
+        CurrentHeading = heading;
+        LastLiveTelemetryAtUtc = lastLiveTelemetryAtUtc;
+        if (topSpeedKmh > TopSpeedKmh)
+        {
+            TopSpeedKmh = topSpeedKmh;
+        }
+    }
+
+    /// <summary>
+    /// Reset live lap/sector progress for a driver rejoining during a race after spectating.
+    /// Preserves archived lap history but clears in-progress lap state.
+    /// </summary>
+    public void ResetLiveProgressForRaceRejoin()
+    {
+        CurrentLapSectors.Clear();
+        CurrentLapSplitTimes.Clear();
+        TimingPointElapsedTimes.Clear();
+        LastTimingPoint = null;
+        CurrentTrackLap = 0;
+        CurrentTrackNode = 0;
+        CurrentRacePosition = 0;
+        LapsCompleted = 0;
+        HasWorldPosition = false;
+        LastLiveTelemetryAtUtc = null;
+        IsInPitLane = false;
+        IsPitStopActive = false;
     }
 
     public bool HasFreshWorldPosition(DateTime snapshotTimeUtc, TimeSpan maxTelemetryAge)
@@ -1350,6 +1388,38 @@ public class RaceSession
         }
     }
 
+    private Driver? GetDriverByUsername(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return null;
+        }
+
+        var normalized = username.Trim();
+        return Players.Values.FirstOrDefault(d =>
+            !string.IsNullOrWhiteSpace(d.Username) &&
+            string.Equals(d.Username.Trim(), normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void CopyDriverFields(Driver target, Driver source)
+    {
+        target.Name = source.Name;
+        target.NameHtml = source.NameHtml;
+        target.CarName = source.CarName;
+        target.SkinName = source.SkinName;
+        target.Username = source.Username;
+        target.ConnectionId = source.ConnectionId;
+        target.TyreTypes = source.TyreTypes.ToArray();
+        target.FuelPercent = source.FuelPercent;
+        target.DriverColor = source.DriverColor;
+        target.CurrentRacePosition = source.CurrentRacePosition;
+        target.CurrentTrackLap = source.CurrentTrackLap;
+        target.CurrentTrackNode = source.CurrentTrackNode;
+        // Apply telemetry snapshot to preserve original timestamp and top-speed value.
+        target.ApplyTelemetrySnapshot(source.HasWorldPosition, source.WorldX, source.WorldY,
+            source.CurrentHeading, source.TopSpeedKmh, source.LastLiveTelemetryAtUtc);
+    }
+
     /// <summary>
     /// Adds or updates a driver (THREAD-SAFE)
     /// </summary>
@@ -1357,8 +1427,31 @@ public class RaceSession
     {
         lock (_playersLock)
         {
-            MergeDepartedDriverInto(driver);
-            Players[driver.PlayerId] = driver;
+            // If driver is known by username with different PLID, merge progress into canonical object.
+            var existingByUsername = GetDriverByUsername(driver.Username);
+            if (existingByUsername != null && existingByUsername.PlayerId != driver.PlayerId)
+            {
+                // keep existing history and metrics, update live fields from incoming driver
+                CopyDriverFields(existingByUsername, driver);
+
+                // If this is a race session and the player is rejoining after spectating,
+                // clear transient live progress (laps/sectors) so the driver starts fresh.
+                if (SessionType == 2)
+                {
+                    existingByUsername.ResetLiveProgressForRaceRejoin();
+                }
+
+                // move dictionary key from old plid to new plid
+                Players.Remove(existingByUsername.PlayerId);
+                existingByUsername.PlayerId = driver.PlayerId;
+                Players[driver.PlayerId] = existingByUsername;
+                driver = existingByUsername;
+            }
+            else
+            {
+                MergeDepartedDriverInto(driver);
+                Players[driver.PlayerId] = driver;
+            }
 
             if (TryGetOfficialResultEntry(driver.PlayerId, driver.Username, out var officialResultEntry))
             {
