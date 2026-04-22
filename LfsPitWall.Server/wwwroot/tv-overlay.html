@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LFS Pit Wall - TV Overlay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/tv-overlay.css">
 </head>
 <body>
@@ -24,21 +27,23 @@
                     </div>
                 </section>
 
-                <section class="tv-overlay-standings-panel" aria-label="TV overlay standings">
-                    <header class="tv-overlay-panel-header">
-                        <div>
-                            <p class="tv-overlay-panel-title">STANDINGS</p>
-                            <p class="tv-overlay-panel-subtitle" id="overlay-window-label">FULL FIELD</p>
+                <div class="tv-overlay-standings-shell">
+                    <section class="tv-overlay-standings-panel" aria-label="TV overlay standings">
+                        <header class="tv-overlay-panel-header">
+                            <div>
+                                <p class="tv-overlay-panel-title">STANDINGS</p>
+                                <p class="tv-overlay-panel-subtitle" id="overlay-window-label">FULL FIELD</p>
+                            </div>
+                            <div class="tv-overlay-rotation-chip" id="overlay-rotation-label">INTERVAL</div>
+                        </header>
+                        <div class="tv-overlay-standings-list" id="overlay-standings-list">
+                            <div class="tv-overlay-empty-state">Waiting for live timing data...</div>
                         </div>
-                        <div class="tv-overlay-rotation-chip" id="overlay-rotation-label">INTERVAL</div>
-                    </header>
-                    <div class="tv-overlay-standings-list" id="overlay-standings-list">
-                        <div class="tv-overlay-empty-state">Waiting for live timing data...</div>
-                    </div>
-                </section>
-            </div>
+                    </section>
 
-            <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+                    <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+                </div>
+            </div>
         </div>
     </main>
 

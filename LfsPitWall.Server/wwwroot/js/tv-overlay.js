@@ -54,13 +54,14 @@ function renderStandings(entries) {
                 </div>`);
         }
 
-        const flags = [];
-        if (entry.isBattling) {
-            flags.push('<span class="tv-overlay-flag is-battle">FIGHT</span>');
-        }
+        const pitFlags = [];
         if (entry.isInPit) {
-            flags.push('<span class="tv-overlay-flag is-pit">PIT</span>');
+            pitFlags.push('<span class="tv-overlay-flag is-pit">PIT</span>');
         }
+
+        const battleBadge = entry.isBattling
+            ? '<span class="tv-overlay-battle-badge">FIGHT</span>'
+            : "";
 
         const deltaClass = entry.deltaText.startsWith("+")
             ? "is-positive"
@@ -77,7 +78,8 @@ function renderStandings(entries) {
                     <div class="tv-overlay-driver-meta">${escapeHtml(entry.metaText)}</div>
                 </div>
                 <div class="tv-overlay-metric">${escapeHtml(entry.metricText)}</div>
-                <div class="tv-overlay-flags">${flags.join("")}</div>
+                <div class="tv-overlay-flags">${pitFlags.join("")}</div>
+                ${battleBadge}
             </article>`);
     });
 

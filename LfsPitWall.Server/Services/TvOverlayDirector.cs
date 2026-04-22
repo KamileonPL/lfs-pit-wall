@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using LfsPitWall.Server.Models;
@@ -10,7 +11,8 @@ public sealed class TvOverlayDirector
 
     private const int MaxVisibleEntries = 15;
     private const int PinnedEntries = 3;
-    private const int RotationWindowSeconds = 120;
+    private const int RotationWindowSeconds = 8;
+    private const int MaxRotationWindows = 4;
     private const int RaceMetricCycleSeconds = 6;
     private const int QualMetricCycleSeconds = 7;
     private const int PopupLifetimeSeconds = 6;
@@ -145,7 +147,7 @@ public sealed class TvOverlayDirector
                 NameHtml = driver.NameHtml,
                 CarBadge = BuildCarBadge(driver.CarName),
                 MetricText = BuildMetricText(metricMode, driver, index, orderedDrivers, cumulativeGapMs),
-                MetaText = BuildMetaText(driver, delta),
+                MetaText = BuildMetaText(driver),
                 DeltaText = BuildDeltaText(delta),
                 IsLeader = index == 0,
                 IsInPit = !string.Equals(driver.GetPitStatus(), "Track", StringComparison.OrdinalIgnoreCase),
@@ -165,9 +167,10 @@ public sealed class TvOverlayDirector
         var pinned = orderedDrivers.Take(PinnedEntries).ToList();
         var pool = orderedDrivers.Skip(PinnedEntries).ToList();
         var rotatingSlots = MaxVisibleEntries - pinned.Count;
-        var pageCount = (int)Math.Ceiling(pool.Count / (double)rotatingSlots);
-        var pageIndex = pageCount <= 1 ? 0 : (int)((sessionTimeMs / 1000 / RotationWindowSeconds) % pageCount);
-        var page = pool.Skip(pageIndex * rotatingSlots).Take(rotatingSlots).ToList();
+        var windowStarts = BuildRotationWindowStarts(pool.Count, rotatingSlots);
+        var pageIndex = windowStarts.Count <= 1 ? 0 : (int)((sessionTimeMs / 1000 / RotationWindowSeconds) % windowStarts.Count);
+        var pageStart = windowStarts[pageIndex];
+        var page = pool.Skip(pageStart).Take(rotatingSlots).ToList();
 
         return pinned.Concat(page).ToList();
     }
@@ -181,9 +184,46 @@ public sealed class TvOverlayDirector
 
         var rotatingSlots = MaxVisibleEntries - PinnedEntries;
         var poolSize = Math.Max(0, totalDrivers - PinnedEntries);
-        var pageCount = (int)Math.Ceiling(poolSize / (double)rotatingSlots);
-        var pageIndex = (int)((sessionTimeMs / 1000 / RotationWindowSeconds) % Math.Max(1, pageCount));
-        return $"FIELD PAGE {pageIndex + 1}/{Math.Max(1, pageCount)} • {totalDrivers} CARS";
+        var windowStarts = BuildRotationWindowStarts(poolSize, rotatingSlots);
+        var pageIndex = windowStarts.Count <= 1 ? 0 : (int)((sessionTimeMs / 1000 / RotationWindowSeconds) % windowStarts.Count);
+        return $"FIELD PAGE {pageIndex + 1}/{Math.Max(1, windowStarts.Count)} • {totalDrivers} CARS";
+    }
+
+    private static List<int> BuildRotationWindowStarts(int poolSize, int rotatingSlots)
+    {
+        if (poolSize <= rotatingSlots)
+        {
+            return new List<int> { 0 };
+        }
+
+        var maxPageStart = Math.Max(0, poolSize - rotatingSlots);
+        var starts = new List<int>(Math.Min(MaxRotationWindows, 1 + (poolSize / Math.Max(1, rotatingSlots))));
+        for (var start = 0; start <= maxPageStart && starts.Count < MaxRotationWindows; start += rotatingSlots)
+        {
+            if (starts.Count == 0 || starts[^1] != start)
+            {
+                starts.Add(start);
+            }
+        }
+
+        if (starts.Count == 0)
+        {
+            starts.Add(0);
+        }
+
+        if (starts[^1] != maxPageStart)
+        {
+            if (starts.Count == MaxRotationWindows)
+            {
+                starts[^1] = maxPageStart;
+            }
+            else
+            {
+                starts.Add(maxPageStart);
+            }
+        }
+
+        return starts;
     }
 
     private static string BuildProgressTitle(RaceSession session)
@@ -315,22 +355,14 @@ public sealed class TvOverlayDirector
         return gapToPreviousMs.HasValue ? FormatGap(gapToPreviousMs.Value) : "-";
     }
 
-    private static string BuildMetaText(Driver driver, int delta)
+    private static string BuildMetaText(Driver driver)
     {
-        var pitStatus = driver.GetPitStatus();
-        var baseText = BuildCarBadge(driver.CarName);
+        var carBadge = BuildCarBadge(driver.CarName);
+        var bestLapText = driver.PersonalBestLap != null
+            ? FormatLapTime(driver.PersonalBestLap.GetAdjustedTime())
+            : "-";
 
-        if (!string.Equals(pitStatus, "Track", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{baseText} • {pitStatus.ToUpperInvariant()}";
-        }
-
-        if (delta != 0)
-        {
-            return $"{baseText} • GRID {BuildDeltaText(delta)}";
-        }
-
-        return baseText;
+        return $"{carBadge} • BEST {bestLapText} • PITS {driver.PitStops}";
     }
 
     private static string BuildDeltaText(int delta)
@@ -377,7 +409,7 @@ public sealed class TvOverlayDirector
     {
         // Display as seconds with one decimal (e.g. 23.4s)
         var seconds = pitTimeMs / 1000d;
-        return $"{seconds:0.0}s";
+        return $"{seconds.ToString("0.0", CultureInfo.InvariantCulture)}s";
     }
 
     private static uint? GetGapToPreviousMs(Driver driver, Driver previousDriver)
@@ -606,7 +638,7 @@ public sealed class TvOverlayDirector
     {
         return gapMs >= 60000
             ? FormatLapTime(gapMs)
-            : $"+{gapMs / 1000d:0.000}";
+            : $"+{(gapMs / 1000d).ToString("0.000", CultureInfo.InvariantCulture)}";
     }
 
     private enum OverlayMetricMode
