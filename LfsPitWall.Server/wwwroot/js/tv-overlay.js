@@ -8,6 +8,7 @@ const overlayElements = {
     windowLabel: document.getElementById("overlay-window-label"),
     standingsList: document.getElementById("overlay-standings-list"),
     focusPanel: document.getElementById("overlay-focus-panel"),
+    focusPosition: document.getElementById("overlay-focus-position"),
     focusLap: document.getElementById("overlay-focus-lap"),
     focusName: document.getElementById("overlay-focus-name"),
     focusBest: document.getElementById("overlay-focus-best"),
@@ -105,7 +106,7 @@ function renderPopups(popups) {
 }
 
 function renderViewedDriver(viewedDriver) {
-    if (!overlayElements.focusPanel || !overlayElements.focusLap || !overlayElements.focusName || !overlayElements.focusBest || !overlayElements.sectorGrid) {
+    if (!overlayElements.focusPanel || !overlayElements.focusPosition || !overlayElements.focusLap || !overlayElements.focusName || !overlayElements.focusBest || !overlayElements.sectorGrid) {
         return;
     }
 
@@ -118,6 +119,7 @@ function renderViewedDriver(viewedDriver) {
 
     overlayElements.focusPanel.hidden = false;
     overlayElements.focusPanel.classList.toggle("is-tv-camera", !!viewedDriver.isTvCamera);
+    overlayElements.focusPosition.textContent = viewedDriver.positionText || "P-";
     overlayElements.focusLap.textContent = viewedDriver.currentLapText || "LAP -";
     overlayElements.focusName.innerHTML = viewedDriver.nameHtml || "-";
     overlayElements.focusBest.textContent = `BEST ${viewedDriver.bestLapText || "-"}`;
