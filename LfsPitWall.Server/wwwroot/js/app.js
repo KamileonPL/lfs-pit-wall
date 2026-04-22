@@ -32,11 +32,13 @@ let standingsViewMode = "table";
 const selectedDriverIds = new Set();
 const driverLapHistoryCache = new Map();
 const driverProfileCache = new Map();
+const gapTrendStateByDriverId = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
 const DRIVER_PROFILE_HIDE_DELAY_MS = 180;
 const DRIVER_PROFILE_RETRY_DELAY_MS = 6500;
 const DRIVER_PROFILE_TOOLTIP_GAP_PX = 8;
+const GAP_TREND_DEADBAND_MS = 50;
 const PUBSTAT_TRACK_PREFIXES = {
     0: "BL",
     1: "SO",
@@ -1444,6 +1446,73 @@ function formatTime(ms, isGap = false) {
     return formatted;
 }
 
+function formatGapTrendDelta(ms) {
+    return `${(ms / 1000).toFixed(3)}s`;
+}
+
+function getGapTrend(driverId, rivalPlayerId, gapToPreviousMs) {
+    if (!driverId || !rivalPlayerId || !Number.isFinite(gapToPreviousMs) || gapToPreviousMs <= 0) {
+        gapTrendStateByDriverId.delete(String(driverId));
+        return null;
+    }
+
+    const stateKey = String(driverId);
+    const previousState = gapTrendStateByDriverId.get(stateKey);
+
+    if (!previousState || previousState.rivalPlayerId !== String(rivalPlayerId)) {
+        gapTrendStateByDriverId.set(stateKey, {
+            rivalPlayerId: String(rivalPlayerId),
+            gapToPreviousMs,
+            trend: null
+        });
+        return null;
+    }
+
+    if (previousState.gapToPreviousMs === gapToPreviousMs) {
+        return previousState.trend;
+    }
+
+    const deltaMs = gapToPreviousMs - previousState.gapToPreviousMs;
+    let trend = {
+        direction: "stable",
+        deltaMs: Math.abs(deltaMs),
+        title: "Gap stable since the previous timing point"
+    };
+
+    if (Math.abs(deltaMs) >= GAP_TREND_DEADBAND_MS) {
+        trend = deltaMs < 0
+            ? {
+                direction: "closing",
+                deltaMs: Math.abs(deltaMs),
+                title: `Closing on the car ahead by ${formatGapTrendDelta(Math.abs(deltaMs))} since the previous timing point`
+            }
+            : {
+                direction: "dropping",
+                deltaMs: Math.abs(deltaMs),
+                title: `Losing ${formatGapTrendDelta(Math.abs(deltaMs))} to the car ahead since the previous timing point`
+            };
+    }
+
+    previousState.gapToPreviousMs = gapToPreviousMs;
+    previousState.trend = trend;
+    gapTrendStateByDriverId.set(stateKey, previousState);
+    return trend;
+}
+
+function renderGapTrend(trend) {
+    if (!trend) {
+        return "";
+    }
+
+    if (trend.direction === "stable") {
+        return "";
+    }
+
+    const directionIcon = trend.direction === "closing" ? "↓" : "↑";
+
+    return `<span class="gap-trend gap-trend--${trend.direction}" title="${trend.title}"><span class="gap-trend-icon" aria-hidden="true">${directionIcon}</span></span>`;
+}
+
 function getTimeClass(currentTime, bestSessionTime, bestPersonalTime) {
     if (!currentTime || currentTime === 0) return "current-time";
     if (bestSessionTime && currentTime === bestSessionTime) return "session-best";
@@ -1685,6 +1754,11 @@ function updateDriversTable(data) {
     const tableBody = document.getElementById("drivers-table");
     const playerIds = new Set((data.players || []).map(player => String(player.playerId)));
     pruneSelectedDriverIds(playerIds);
+    Array.from(gapTrendStateByDriverId.keys()).forEach((driverId) => {
+        if (!playerIds.has(driverId)) {
+            gapTrendStateByDriverId.delete(driverId);
+        }
+    });
 
     if (hoveredDriverId && !playerIds.has(hoveredDriverId)) {
         setHoveredDriverId(null);
@@ -1707,9 +1781,13 @@ function updateDriversTable(data) {
     let html = "";
     data.players.forEach((driver, index) => {
         const position = index + 1;
+        const previousDriver = index > 0 ? data.players[index - 1] : null;
         const sectorNumbers = getSectorNumbers(data);
         const hasGapToPrevious = driver.gapToPreviousMs !== null && driver.gapToPreviousMs !== undefined;
         const isFightForPosition = hasGapToPrevious && driver.gapToPreviousMs > 0 && driver.gapToPreviousMs < 1000;
+        const gapTrend = position === 1 || !previousDriver
+            ? null
+            : getGapTrend(driver.playerId, previousDriver.playerId, driver.gapToPreviousMs);
 
         const gap = position === 1
             ? "-"
@@ -1766,7 +1844,7 @@ function updateDriversTable(data) {
                 </td>
                 <td class="px-4 py-3 font-semibold driver-name${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
-                <td class="px-4 py-3">${driver.lapsCompleted}</td>
+                <td class="px-3 py-3 standings-column--laps">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
                     <div class="lap-time-cell lap-history-trigger${isLapHistoryActive ? ' is-active' : ''}" data-last-lap-driver-id="${driver.playerId}">
                         <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
@@ -1774,18 +1852,16 @@ function updateDriversTable(data) {
                     </div>
                 </td>
                 <td class="px-4 py-3 text-sm gap-indicator">
-                    <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
-                        ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
-                        <span>${gap}</span>
+                    <span class="gap-chip-stack${isFightForPosition ? ' is-battle' : ''}">
+                        <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
+                            ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
+                            <span>${gap}</span>
+                            ${position === 1 ? '' : renderGapTrend(gapTrend)}
+                        </span>
+                        ${isFightForPosition ? '<span class="gap-battle-label">Position FIGHT</span>' : ''}
                     </span>
                 </td>
-                <td class="px-4 py-3 font-mono text-sm">
-                    <div class="lap-time-cell">
-                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
-                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
-                    </div>
-                </td>
-                <td class="px-4 py-3 text-xs">
+                <td class="px-4 py-3 text-xs standings-column--sectors">
                     ${sectorNumbers.length === 0
                         ? '<span class="text-gray-500">-</span>'
                         : sectorNumbers.map(sectorNum => `
@@ -1794,7 +1870,13 @@ function updateDriversTable(data) {
                                 ${getSectorDelta(sectorNum) ? `<span class="sector-delta">${getSectorDelta(sectorNum)}</span>` : ""}
                             </div>`).join('')}
                 </td>
-                <td class="px-4 py-3 text-sm font-mono text-gray-300">${formatSpeedKmh(driver.topSpeedKmh)}</td>
+                <td class="px-4 py-3 font-mono text-sm">
+                    <div class="lap-time-cell">
+                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
+                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-sm font-mono text-gray-300 standings-column--top-speed">${formatSpeedKmh(driver.topSpeedKmh)}</td>
                 <td class="px-4 py-3">
                     ${renderTyreSummary(driver.tyreTypes)}
                 </td>
