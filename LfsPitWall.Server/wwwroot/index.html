@@ -124,6 +124,7 @@
                     <div class="standings-view-toggle" role="tablist" aria-label="Standings view toggle">
                         <button type="button" class="standings-view-button is-active" id="standings-view-table" data-standings-view="table" aria-pressed="true">Table</button>
                         <button type="button" class="standings-view-button" id="standings-view-map" data-standings-view="map" aria-pressed="false">Map</button>
+                        <button type="button" class="standings-view-button" id="standings-view-charts" data-standings-view="charts" aria-pressed="false">Chart</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto" id="standings-table-view">
@@ -180,6 +181,36 @@
                                 <div class="track-map-legend-empty">Waiting for drivers...</div>
                             </div>
                         </aside>
+                    </div>
+                </div>
+                <div class="standings-chart-view" id="standings-chart-view" hidden>
+                    <div class="standings-chart-shell">
+                        <div class="standings-chart-toolbar">
+                            <div>
+                                <p class="standings-chart-title">Lap Time Comparison</p>
+                                <p class="standings-chart-subtitle" id="standings-chart-subtitle">Select drivers in the table or below the chart to compare lap pace and adjust the vertical time scale.</p>
+                            </div>
+                            <div class="standings-chart-controls" id="standings-chart-controls" hidden>
+                                <button type="button" class="standings-chart-reset" id="standings-chart-zoom-in">Scale +</button>
+                                <button type="button" class="standings-chart-reset" id="standings-chart-zoom-out">Scale -</button>
+                                <button type="button" class="standings-chart-reset" id="standings-chart-reset">Reset</button>
+                            </div>
+                        </div>
+                        <div class="standings-chart-stage">
+                            <canvas id="standings-chart-canvas" class="standings-chart-canvas" aria-label="Lap time comparison chart" hidden></canvas>
+                            <div class="standings-chart-empty" id="standings-chart-empty">Select one or more drivers from the table, map, or picker below to render lap-time trends.</div>
+                            <div class="standings-chart-loading" id="standings-chart-loading" hidden>Loading chart data...</div>
+                        </div>
+                        <div class="standings-chart-driver-picker-panel" aria-label="Chart driver legend and selection">
+                            <div class="standings-chart-driver-picker-header">
+                                <p class="standings-chart-driver-picker-title">Driver Legend &amp; Selection</p>
+                                <p class="standings-chart-driver-picker-copy">Click to add or remove drivers. Selection is shared with Table and Map.</p>
+                            </div>
+                            <div class="standings-chart-driver-picker" id="standings-chart-driver-picker">
+                                <div class="standings-chart-driver-picker-empty">Waiting for drivers...</div>
+                            </div>
+                        </div>
+                        <p class="standings-chart-hint" id="standings-chart-hint">Use the mouse wheel over the chart or `Scale +` / `Scale -` to change the vertical lap-time scale. Click and drag the chart to move the scaled view up or down. Driver selection below is shared with Table and Map.</p>
                     </div>
                 </div>
             </div>
