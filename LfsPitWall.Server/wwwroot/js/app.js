@@ -356,6 +356,15 @@ function formatDistanceMeters(distanceMeters) {
     return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(numericValue / 1000)} km`;
 }
 
+function formatRatioScore(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return "-";
+    }
+
+    return formatCompactNumber(Math.round(numericValue * 100));
+}
+
 function formatRelativeTimestamp(value) {
     if (!value) {
         return "unknown";
@@ -415,23 +424,50 @@ function getDriverProfileRacecraftScore(stats) {
     const wins = Math.max(0, Number(stats.wins || 0));
     const secondPlaces = Math.max(0, Number(stats.secondPlaces || 0));
     const thirdPlaces = Math.max(0, Number(stats.thirdPlaces || 0));
-    const podiums = Math.max(0, Number(stats.podiums ?? (wins + secondPlaces + thirdPlaces)));
     const qualifyingSessions = Math.max(0, Number(stats.qualifyingSessions || 0));
     const polePositions = Math.max(0, Number(stats.polePositions || 0));
-    const laps = Math.max(0, Number(stats.laps || 0));
+    const nonPodiumFinishes = Math.max(0, finishes - wins - secondPlaces - thirdPlaces);
 
     if (finishes === 0 && qualifyingSessions === 0) {
         return null;
     }
 
-    const adjustedPodiumRate = (podiums + 1.5) / (finishes + 24);
-    const adjustedWinRate = (wins + 0.35) / (finishes + 24);
-    const adjustedPoleRate = (polePositions + 0.25) / (qualifyingSessions + 16);
-    const experienceFactor = 0.86 + (0.14 * Math.min(1, Math.log10(laps + 10) / 3.4));
-    const weightedPerformance = (0.5 * adjustedPodiumRate) + (0.35 * adjustedWinRate) + (0.15 * adjustedPoleRate);
-    const score = Math.round(weightedPerformance * experienceFactor * 160);
+    const weightedFinishPoints = wins
+        + (0.65 * secondPlaces)
+        + (0.45 * thirdPlaces)
+        + (0.05 * nonPodiumFinishes);
+    const resultPriorMean = 0.32;
+    const resultPriorStrength = 240;
+    const polePriorMean = 0.12;
+    const polePriorStrength = 60;
+    const resultQuality = finishes > 0
+        ? (weightedFinishPoints + (resultPriorMean * resultPriorStrength)) / (finishes + resultPriorStrength)
+        : resultPriorMean;
+    const poleQuality = qualifyingSessions > 0
+        ? (polePositions + (polePriorMean * polePriorStrength)) / (qualifyingSessions + polePriorStrength)
+        : polePriorMean;
+    const evidence = finishes + (0.35 * qualifyingSessions);
+    const confidence = Math.sqrt(evidence / (evidence + 500));
+    const compositeScore = (0.7 * resultQuality)
+        + (0.2 * poleQuality)
+        + (0.1 * confidence);
+    const score = Math.round(28 + (90 * compositeScore));
 
     return Math.max(1, Math.min(99, score));
+}
+
+function getDriverProfileTenacity(stats) {
+    if (!stats) {
+        return null;
+    }
+
+    const finishes = Math.max(0, Number(stats.finishes || 0));
+    const hostsJoined = Math.max(0, Number(stats.hostsJoined || 0));
+    if (hostsJoined === 0) {
+        return null;
+    }
+
+    return finishes / hostsJoined;
 }
 
 function escapeHtml(value) {
@@ -898,6 +934,7 @@ function renderDriverProfileTooltip(driver, profile) {
 
     const stats = profile.stats || {};
     const racecraftScore = getDriverProfileRacecraftScore(stats);
+    const tenacity = getDriverProfileTenacity(stats);
     const hostNameHtml = profile.currentOrLastHostNameHtml || convertLfsTextToHtml(stats.currentOrLastHostName || "") || "-";
     const refreshedText = profile.lastSuccessAtUtc
         ? `Refreshed ${formatRelativeTimestamp(profile.lastSuccessAtUtc)}`
@@ -915,6 +952,10 @@ function renderDriverProfileTooltip(driver, profile) {
             <div class="driver-profile-stat-card is-accent">
                 <span class="driver-profile-stat-label">Racecraft</span>
                 <span class="driver-profile-stat-value">${racecraftScore == null ? "-" : formatCompactNumber(racecraftScore)}</span>
+            </div>
+            <div class="driver-profile-stat-card is-accent">
+                <span class="driver-profile-stat-label">Finish Rate</span>
+                <span class="driver-profile-stat-value">${tenacity == null ? "-" : formatRatioScore(tenacity)}</span>
             </div>
             <div class="driver-profile-stat-card">
                 <span class="driver-profile-stat-label">Wins</span>
