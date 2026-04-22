@@ -22,6 +22,7 @@ public sealed class TvOverlaySnapshot
 public sealed class TvOverlayViewedDriver
 {
     public byte PlayerId { get; init; }
+    public bool IsTvCamera { get; init; }
     public string NameHtml { get; init; } = string.Empty;
     public string CarBadge { get; init; } = string.Empty;
     public string PositionText { get; init; } = string.Empty;

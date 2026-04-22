@@ -413,6 +413,11 @@ body {
     padding: 7px 14px 8px;
 }
 
+.tv-overlay-focus-panel.is-tv-camera {
+    top: auto;
+    bottom: clamp(36px, 5.2vh, 84px);
+}
+
 .tv-overlay-focus-driver-row {
     grid-area: driver;
     display: flex;

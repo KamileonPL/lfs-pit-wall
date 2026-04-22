@@ -111,11 +111,13 @@ function renderViewedDriver(viewedDriver) {
 
     if (!viewedDriver?.sectors?.length) {
         overlayElements.focusPanel.hidden = true;
+        overlayElements.focusPanel.classList.remove("is-tv-camera");
         overlayElements.sectorGrid.innerHTML = "";
         return;
     }
 
     overlayElements.focusPanel.hidden = false;
+    overlayElements.focusPanel.classList.toggle("is-tv-camera", !!viewedDriver.isTvCamera);
     overlayElements.focusLap.textContent = viewedDriver.currentLapText || "LAP -";
     overlayElements.focusName.innerHTML = viewedDriver.nameHtml || "-";
     overlayElements.focusBest.textContent = `BEST ${viewedDriver.bestLapText || "-"}`;

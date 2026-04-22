@@ -17,6 +17,7 @@ public sealed class TvOverlayDirector
     private const int QualMetricCycleSeconds = 7;
     private const int PopupLifetimeSeconds = 6;
     private const int MaxPopupCount = 2;
+    private const byte ViewCamTv = 2;
 
     private readonly object _sync = new();
     private readonly HashSet<string> _subscribers = new(StringComparer.Ordinal);
@@ -119,7 +120,7 @@ public sealed class TvOverlayDirector
         RaceSession session,
         IReadOnlyDictionary<int, SessionBestSectorInfo> bestSectorInfos)
     {
-        var (viewedPlayerId, _) = session.GetViewedDriverState();
+        var (viewedPlayerId, inGameCamera) = session.GetViewedDriverState();
         if (!viewedPlayerId.HasValue || viewedPlayerId.Value == 0)
         {
             return null;
@@ -136,6 +137,7 @@ public sealed class TvOverlayDirector
             return new TvOverlayViewedDriver
             {
                 PlayerId = driver.PlayerId,
+                IsTvCamera = inGameCamera == ViewCamTv,
                 NameHtml = driver.NameHtml,
                 CarBadge = BuildCarBadge(driver.CarName),
                 PositionText = driver.CurrentRacePosition > 0 ? $"P{driver.CurrentRacePosition}" : session.SessionType == 2 ? "RACE" : "QUALI",
