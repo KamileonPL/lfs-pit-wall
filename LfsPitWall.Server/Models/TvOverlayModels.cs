@@ -13,9 +13,29 @@ public sealed class TvOverlaySnapshot
     public double ProgressRatio { get; init; }
     public string RotationLabel { get; init; } = string.Empty;
     public string StandingsWindowLabel { get; init; } = string.Empty;
+    public TvOverlayViewedDriver? ViewedDriver { get; init; }
     public List<TvOverlayStandingEntry> Entries { get; init; } = new();
     public List<TvOverlayPopup> Popups { get; init; } = new();
     public string UpdatedAt { get; init; } = string.Empty;
+}
+
+public sealed class TvOverlayViewedDriver
+{
+    public byte PlayerId { get; init; }
+    public string NameHtml { get; init; } = string.Empty;
+    public string CarBadge { get; init; } = string.Empty;
+    public string PositionText { get; init; } = string.Empty;
+    public string CurrentLapText { get; init; } = string.Empty;
+    public string BestLapText { get; init; } = "-";
+    public List<TvOverlaySectorEntry> Sectors { get; init; } = new();
+}
+
+public sealed class TvOverlaySectorEntry
+{
+    public int SectorNumber { get; init; }
+    public string CurrentText { get; init; } = "--.---";
+    public string ReferenceText { get; init; } = string.Empty;
+    public string AccentClass { get; init; } = "pending";
 }
 
 public sealed class TvOverlayStandingEntry

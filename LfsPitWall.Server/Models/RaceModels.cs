@@ -1261,6 +1261,16 @@ public class RaceSession
     public byte QualifyingMins { get; set; }
 
     /// <summary>
+    /// Last in-game camera mode reported by IS_STA.
+    /// </summary>
+    public byte InGameCamera { get; private set; }
+
+    /// <summary>
+    /// Player ID currently being viewed by the local camera, if any.
+    /// </summary>
+    public byte? ViewedPlayerId { get; private set; }
+
+    /// <summary>
     /// Session best lap cached for fast reads.
     /// </summary>
     public LapData? SessionBestLap { get; private set; }
@@ -1341,6 +1351,23 @@ public class RaceSession
             }
 
             return result;
+        }
+    }
+
+    public void UpdateViewedDriver(byte viewedPlayerId, byte inGameCamera)
+    {
+        lock (_playersLock)
+        {
+            InGameCamera = inGameCamera;
+            ViewedPlayerId = viewedPlayerId == 0 ? null : viewedPlayerId;
+        }
+    }
+
+    public (byte? ViewedPlayerId, byte InGameCamera) GetViewedDriverState()
+    {
+        lock (_playersLock)
+        {
+            return (ViewedPlayerId, InGameCamera);
         }
     }
 
@@ -1881,6 +1908,8 @@ public class RaceSession
             ActiveSectorCount = 0;
             MaxRaceLaps = 0;
             QualifyingMins = 0;
+            InGameCamera = 0;
+            ViewedPlayerId = null;
             SessionBestLap = null;
             SessionBestLapAuthorPLID = null;
             SessionBestLapNumber = null;

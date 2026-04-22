@@ -613,6 +613,7 @@ public class InSimService : BackgroundService
         
         // Store qualifying minutes from IS_STA
         _raceSession.QualifyingMins = packet.QualMins;
+        _raceSession.UpdateViewedDriver(packet.ViewPLID, packet.InGameCam);
 
         // Determine session type from packet.RaceInProg: 0=no race, 1=race, 2=qualifying
         // We map to: 0=practice/idle, 1=qualifying, 2=race

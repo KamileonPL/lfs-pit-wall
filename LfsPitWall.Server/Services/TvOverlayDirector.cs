@@ -108,10 +108,118 @@ public sealed class TvOverlayDirector
             ProgressRatio = BuildProgressRatio(session, leader),
             RotationLabel = GetMetricModeLabel(metricMode),
             StandingsWindowLabel = BuildWindowLabel(orderedDrivers.Count, visibleDrivers.Count, session.SessionTimeMs),
+            ViewedDriver = BuildViewedDriver(session, bestSectorInfos),
             Entries = BuildEntries(session, orderedDrivers, visibleDrivers, metricMode),
             Popups = popups,
             UpdatedAt = DateTime.UtcNow.ToString("O")
         };
+    }
+
+    private TvOverlayViewedDriver? BuildViewedDriver(
+        RaceSession session,
+        IReadOnlyDictionary<int, SessionBestSectorInfo> bestSectorInfos)
+    {
+        var (viewedPlayerId, _) = session.GetViewedDriverState();
+        if (!viewedPlayerId.HasValue || viewedPlayerId.Value == 0)
+        {
+            return null;
+        }
+
+        var activeSectorCount = session.ActiveSectorCount;
+
+        return session.GetDriverSnapshot(viewedPlayerId.Value, driver =>
+        {
+            var currentSectors = driver.GetCurrentSectorProgress();
+            var sectorCount = Math.Max(activeSectorCount, Math.Max(currentSectors.Count, Math.Max(driver.PersonalBestSectors.Count, bestSectorInfos.Count)));
+            sectorCount = Math.Clamp(sectorCount, 1, 3);
+
+            return new TvOverlayViewedDriver
+            {
+                PlayerId = driver.PlayerId,
+                NameHtml = driver.NameHtml,
+                CarBadge = BuildCarBadge(driver.CarName),
+                PositionText = driver.CurrentRacePosition > 0 ? $"P{driver.CurrentRacePosition}" : session.SessionType == 2 ? "RACE" : "QUALI",
+                CurrentLapText = $"LAP {driver.LapsCompleted + 1}",
+                BestLapText = driver.PersonalBestLap != null ? FormatLapTime(driver.PersonalBestLap.GetAdjustedTime()) : "-",
+                Sectors = Enumerable.Range(1, sectorCount)
+                    .Select(sectorNumber => BuildViewedSectorEntry(sectorNumber, currentSectors, driver.PersonalBestSectors, bestSectorInfos))
+                    .ToList()
+            };
+        });
+    }
+
+    private TvOverlaySectorEntry BuildViewedSectorEntry(
+        int sectorNumber,
+        IReadOnlyDictionary<int, SectorTime> currentSectors,
+        IReadOnlyDictionary<int, uint> personalBestSectors,
+        IReadOnlyDictionary<int, SessionBestSectorInfo> bestSectorInfos)
+    {
+        if (!currentSectors.TryGetValue(sectorNumber, out var currentSector) || currentSector.TimeMs == 0)
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = "--.---",
+                ReferenceText = BuildPendingSectorReference(sectorNumber, personalBestSectors, bestSectorInfos),
+                AccentClass = "pending"
+            };
+        }
+
+        if (!currentSector.IsValid)
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = FormatLapTime(currentSector.TimeMs),
+                ReferenceText = "INVALID",
+                AccentClass = "invalid"
+            };
+        }
+
+        if (bestSectorInfos.TryGetValue(sectorNumber, out var sessionBest) && currentSector.TimeMs <= sessionBest.TimeMs)
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = FormatLapTime(currentSector.TimeMs),
+                ReferenceText = "SESSION BEST",
+                AccentClass = "session-best"
+            };
+        }
+
+        if (personalBestSectors.TryGetValue(sectorNumber, out var personalBest) && currentSector.TimeMs <= personalBest)
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = FormatLapTime(currentSector.TimeMs),
+                ReferenceText = "PERSONAL BEST",
+                AccentClass = "personal-best"
+            };
+        }
+
+        return new TvOverlaySectorEntry
+        {
+            SectorNumber = sectorNumber,
+            CurrentText = FormatLapTime(currentSector.TimeMs),
+            ReferenceText = BuildPendingSectorReference(sectorNumber, personalBestSectors, bestSectorInfos),
+            AccentClass = "complete"
+        };
+    }
+
+    private string BuildPendingSectorReference(
+        int sectorNumber,
+        IReadOnlyDictionary<int, uint> personalBestSectors,
+        IReadOnlyDictionary<int, SessionBestSectorInfo> bestSectorInfos)
+    {
+        if (personalBestSectors.TryGetValue(sectorNumber, out var personalBest))
+        {
+            return $"PB {FormatLapTime(personalBest)}";
+        }
+
+        return bestSectorInfos.TryGetValue(sectorNumber, out var sessionBest)
+            ? $"BEST {FormatLapTime(sessionBest.TimeMs)}"
+            : "WAITING";
     }
 
     private List<TvOverlayStandingEntry> BuildEntries(

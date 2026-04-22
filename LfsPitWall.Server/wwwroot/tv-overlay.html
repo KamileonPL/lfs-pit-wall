@@ -12,6 +12,17 @@
 <body>
     <main class="tv-overlay-root" aria-label="Live TV overlay">
         <div class="tv-overlay-stage">
+            <section class="tv-overlay-focus-panel" id="overlay-focus-panel" aria-label="Viewed driver live sectors" hidden>
+                <div class="tv-overlay-focus-driver-row">
+                    <p class="tv-overlay-focus-name" id="overlay-focus-name">-</p>
+                    <div class="tv-overlay-focus-meta-row">
+                        <p class="tv-overlay-focus-lap" id="overlay-focus-lap">LAP -</p>
+                        <p class="tv-overlay-focus-best" id="overlay-focus-best">BEST -</p>
+                    </div>
+                </div>
+                <div class="tv-overlay-sector-grid" id="overlay-sector-grid"></div>
+            </section>
+
             <div class="tv-overlay-left-rail">
                 <section class="tv-overlay-header">
                     <div class="tv-overlay-progress-card">
@@ -41,7 +52,9 @@
                         </div>
                     </section>
 
-                    <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+                    <div class="tv-overlay-side-column">
+                        <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+                    </div>
                 </div>
             </div>
         </div>
