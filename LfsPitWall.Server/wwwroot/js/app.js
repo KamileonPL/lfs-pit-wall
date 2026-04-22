@@ -406,6 +406,34 @@ function formatDriverProfileLastCombo(trackCode, carCode) {
     return formattedCar ? `${formattedTrack} ${formattedCar}` : formattedTrack;
 }
 
+function getDriverProfileRacecraftScore(stats) {
+    if (!stats) {
+        return null;
+    }
+
+    const finishes = Math.max(0, Number(stats.finishes || 0));
+    const wins = Math.max(0, Number(stats.wins || 0));
+    const secondPlaces = Math.max(0, Number(stats.secondPlaces || 0));
+    const thirdPlaces = Math.max(0, Number(stats.thirdPlaces || 0));
+    const podiums = Math.max(0, Number(stats.podiums ?? (wins + secondPlaces + thirdPlaces)));
+    const qualifyingSessions = Math.max(0, Number(stats.qualifyingSessions || 0));
+    const polePositions = Math.max(0, Number(stats.polePositions || 0));
+    const laps = Math.max(0, Number(stats.laps || 0));
+
+    if (finishes === 0 && qualifyingSessions === 0) {
+        return null;
+    }
+
+    const adjustedPodiumRate = (podiums + 1.5) / (finishes + 24);
+    const adjustedWinRate = (wins + 0.35) / (finishes + 24);
+    const adjustedPoleRate = (polePositions + 0.25) / (qualifyingSessions + 16);
+    const experienceFactor = 0.86 + (0.14 * Math.min(1, Math.log10(laps + 10) / 3.4));
+    const weightedPerformance = (0.5 * adjustedPodiumRate) + (0.35 * adjustedWinRate) + (0.15 * adjustedPoleRate);
+    const score = Math.round(weightedPerformance * experienceFactor * 160);
+
+    return Math.max(1, Math.min(99, score));
+}
+
 function escapeHtml(value) {
     return String(value || "")
         .replaceAll("&", "&amp;")
@@ -869,6 +897,7 @@ function renderDriverProfileTooltip(driver, profile) {
     }
 
     const stats = profile.stats || {};
+    const racecraftScore = getDriverProfileRacecraftScore(stats);
     const hostNameHtml = profile.currentOrLastHostNameHtml || convertLfsTextToHtml(stats.currentOrLastHostName || "") || "-";
     const refreshedText = profile.lastSuccessAtUtc
         ? `Refreshed ${formatRelativeTimestamp(profile.lastSuccessAtUtc)}`
@@ -883,6 +912,10 @@ function renderDriverProfileTooltip(driver, profile) {
             ${countryLine}
         </div>
         <div class="driver-profile-tooltip-grid">
+            <div class="driver-profile-stat-card is-accent">
+                <span class="driver-profile-stat-label">Racecraft</span>
+                <span class="driver-profile-stat-value">${racecraftScore == null ? "-" : formatCompactNumber(racecraftScore)}</span>
+            </div>
             <div class="driver-profile-stat-card">
                 <span class="driver-profile-stat-label">Wins</span>
                 <span class="driver-profile-stat-value">${formatCompactNumber(stats.wins)}</span>
