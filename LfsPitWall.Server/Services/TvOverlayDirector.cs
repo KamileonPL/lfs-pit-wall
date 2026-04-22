@@ -18,6 +18,7 @@ public sealed class TvOverlayDirector
     private const int PopupLifetimeSeconds = 6;
     private const int MaxPopupCount = 2;
     private const byte ViewCamTv = 2;
+    private static readonly IReadOnlyDictionary<int, SectorTime> EmptySectorTimes = new Dictionary<int, SectorTime>();
 
     private readonly object _sync = new();
     private readonly HashSet<string> _subscribers = new(StringComparer.Ordinal);
@@ -131,7 +132,10 @@ public sealed class TvOverlayDirector
         return session.GetDriverSnapshot(viewedPlayerId.Value, driver =>
         {
             var currentSectors = driver.GetCurrentSectorProgress();
-            var sectorCount = Math.Max(activeSectorCount, Math.Max(currentSectors.Count, Math.Max(driver.PersonalBestSectors.Count, bestSectorInfos.Count)));
+            var heldLapSectors = currentSectors.Count == 0 && driver.LapHistory.Count > 0
+                ? (IReadOnlyDictionary<int, SectorTime>)driver.LapHistory[^1].Sectors
+                : EmptySectorTimes;
+            var sectorCount = Math.Max(activeSectorCount, Math.Max(Math.Max(currentSectors.Count, heldLapSectors.Count), Math.Max(driver.PersonalBestSectors.Count, bestSectorInfos.Count)));
             sectorCount = Math.Clamp(sectorCount, 1, 3);
 
             return new TvOverlayViewedDriver
@@ -144,7 +148,7 @@ public sealed class TvOverlayDirector
                 CurrentLapText = $"LAP {driver.LapsCompleted + 1}",
                 BestLapText = driver.PersonalBestLap != null ? FormatLapTime(driver.PersonalBestLap.GetAdjustedTime()) : "-",
                 Sectors = Enumerable.Range(1, sectorCount)
-                    .Select(sectorNumber => BuildViewedSectorEntry(sectorNumber, currentSectors, driver.PersonalBestSectors, bestSectorInfos))
+                    .Select(sectorNumber => BuildViewedSectorEntry(sectorNumber, currentSectors, heldLapSectors, driver.PersonalBestSectors, bestSectorInfos))
                     .ToList()
             };
         });
@@ -153,10 +157,22 @@ public sealed class TvOverlayDirector
     private TvOverlaySectorEntry BuildViewedSectorEntry(
         int sectorNumber,
         IReadOnlyDictionary<int, SectorTime> currentSectors,
+        IReadOnlyDictionary<int, SectorTime> heldLapSectors,
         IReadOnlyDictionary<int, uint> personalBestSectors,
         IReadOnlyDictionary<int, SessionBestSectorInfo> bestSectorInfos)
     {
-        if (!currentSectors.TryGetValue(sectorNumber, out var currentSector) || currentSector.TimeMs == 0)
+        if (!currentSectors.TryGetValue(sectorNumber, out var currentSector) && !heldLapSectors.TryGetValue(sectorNumber, out currentSector))
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = "--.---",
+                ReferenceText = BuildPendingSectorReference(sectorNumber, personalBestSectors, bestSectorInfos),
+                AccentClass = "pending"
+            };
+        }
+
+        if (currentSector.TimeMs == 0)
         {
             return new TvOverlaySectorEntry
             {
@@ -184,7 +200,7 @@ public sealed class TvOverlayDirector
             {
                 SectorNumber = sectorNumber,
                 CurrentText = FormatLapTime(currentSector.TimeMs),
-                ReferenceText = "SESSION BEST",
+                ReferenceText = BuildSectorDiffText("SB", currentSector.TimeMs, sessionBest.TimeMs),
                 AccentClass = "session-best"
             };
         }
@@ -195,8 +211,30 @@ public sealed class TvOverlayDirector
             {
                 SectorNumber = sectorNumber,
                 CurrentText = FormatLapTime(currentSector.TimeMs),
-                ReferenceText = "PERSONAL BEST",
+                ReferenceText = BuildSectorDiffText("PB", currentSector.TimeMs, personalBest),
                 AccentClass = "personal-best"
+            };
+        }
+
+        if (personalBestSectors.TryGetValue(sectorNumber, out personalBest))
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = FormatLapTime(currentSector.TimeMs),
+                ReferenceText = BuildSectorDiffText("PB", currentSector.TimeMs, personalBest),
+                AccentClass = "complete"
+            };
+        }
+
+        if (bestSectorInfos.TryGetValue(sectorNumber, out sessionBest))
+        {
+            return new TvOverlaySectorEntry
+            {
+                SectorNumber = sectorNumber,
+                CurrentText = FormatLapTime(currentSector.TimeMs),
+                ReferenceText = BuildSectorDiffText("SB", currentSector.TimeMs, sessionBest.TimeMs),
+                AccentClass = "complete"
             };
         }
 
@@ -204,7 +242,7 @@ public sealed class TvOverlayDirector
         {
             SectorNumber = sectorNumber,
             CurrentText = FormatLapTime(currentSector.TimeMs),
-            ReferenceText = BuildPendingSectorReference(sectorNumber, personalBestSectors, bestSectorInfos),
+            ReferenceText = string.Empty,
             AccentClass = "complete"
         };
     }
@@ -220,8 +258,13 @@ public sealed class TvOverlayDirector
         }
 
         return bestSectorInfos.TryGetValue(sectorNumber, out var sessionBest)
-            ? $"BEST {FormatLapTime(sessionBest.TimeMs)}"
+            ? $"SB {FormatLapTime(sessionBest.TimeMs)}"
             : "WAITING";
+    }
+
+    private static string BuildSectorDiffText(string label, uint currentTimeMs, uint referenceTimeMs)
+    {
+        return $"{label} {FormatSectorDelta((int)currentTimeMs - (int)referenceTimeMs)}";
     }
 
     private List<TvOverlayStandingEntry> BuildEntries(
@@ -749,6 +792,18 @@ public sealed class TvOverlayDirector
         return gapMs >= 60000
             ? FormatLapTime(gapMs)
             : $"+{(gapMs / 1000d).ToString("0.000", CultureInfo.InvariantCulture)}";
+    }
+
+    private static string FormatSectorDelta(int deltaMs)
+    {
+        if (deltaMs == 0)
+        {
+            return "0.000";
+        }
+
+        var sign = deltaMs < 0 ? "-" : "+";
+        var absoluteDeltaMs = Math.Abs(deltaMs);
+        return $"{sign}{(absoluteDeltaMs / 1000d).ToString("0.000", CultureInfo.InvariantCulture)}";
     }
 
     private enum OverlayMetricMode

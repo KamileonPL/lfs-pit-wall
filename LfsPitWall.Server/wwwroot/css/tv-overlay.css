@@ -614,6 +614,9 @@ body {
     font-weight: 700;
     letter-spacing: 0.05em;
     line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .tv-overlay-sector-value {
