@@ -29,10 +29,13 @@ let sessionClockLastServerMs = 0;
 let sessionClockRunning = false;
 let lastRenderedChatRevision = null;
 let standingsViewMode = "table";
+let signalRScriptLoadPromise = null;
+let signalRConnectionInitialized = false;
 const selectedDriverIds = new Set();
 const driverLapHistoryCache = new Map();
 const driverProfileCache = new Map();
 const gapTrendStateByDriverId = new Map();
+const driverTableRowMarkupCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
 const DRIVER_PROFILE_HIDE_DELAY_MS = 180;
@@ -1287,15 +1290,26 @@ async function ensureDriverLapHistory(driver) {
 // ── SignalR Loading & Connection ───────────────────────────
 
 function loadSignalRScript() {
-    return new Promise((resolve, reject) => {
-        if (typeof signalR !== 'undefined') {
-            resolve(); // Already loaded
+    if (typeof signalR !== 'undefined') {
+        return Promise.resolve();
+    }
+
+    if (signalRScriptLoadPromise) {
+        return signalRScriptLoadPromise;
+    }
+
+    signalRScriptLoadPromise = new Promise((resolve, reject) => {
+        const existingScript = document.querySelector('script[data-signalr-client="true"]');
+        if (existingScript) {
+            existingScript.addEventListener('load', () => resolve(), { once: true });
+            existingScript.addEventListener('error', () => reject(new Error('Failed to load SignalR')), { once: true });
             return;
         }
 
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js';
         script.async = true;
+        script.dataset.signalrClient = 'true';
         script.onerror = () => reject(new Error('Failed to load SignalR'));
         script.onload = () => {
             if (typeof signalR !== 'undefined') {
@@ -1305,7 +1319,12 @@ function loadSignalRScript() {
             }
         };
         document.head.appendChild(script);
+    }).catch((error) => {
+        signalRScriptLoadPromise = null;
+        throw error;
     });
+
+    return signalRScriptLoadPromise;
 }
 
 function waitForSignalR(callback, maxAttempts = 300) {
@@ -1333,13 +1352,22 @@ function waitForSignalR(callback, maxAttempts = 300) {
 }
 
 function initializeConnection() {
+    if (signalRConnectionInitialized || typeof signalR === 'undefined') {
+        return;
+    }
+
+    signalRConnectionInitialized = true;
+
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/hubs/timing")
         .withAutomaticReconnect([1000, 3000, 5000, 10000, 30000])
         .build();
 
-    connection.onreconnecting(() => {
-        debugLog("Reconnecting...", 'warn');
+    connection.serverTimeoutInMilliseconds = 60000;
+    connection.keepAliveIntervalInMilliseconds = 15000;
+
+    connection.onreconnecting((error) => {
+        debugLog(`Reconnecting... ${error?.message || 'Connection interrupted'}`, 'warn');
         updateConnectionStatus(false, "Reconnecting...");
     });
 
@@ -1385,6 +1413,7 @@ function initializeConnection() {
             updateConnectionStatus(true, "Connected");
         })
         .catch(error => {
+            signalRConnectionInitialized = false;
             debugLog(`Connection failed: ${error.message}`, 'error');
             updateConnectionStatus(false, `Error: ${error.message || 'Connection Failed'}`);
             setTimeout(() => attemptReconnect(connection), 3000);
@@ -1398,7 +1427,10 @@ function attemptReconnect(connection) {
 
     debugLog("Attempting reconnect...", 'warn');
     connection.start()
-        .then(() => debugLog("Reconnected", 'info'))
+        .then(() => {
+            signalRConnectionInitialized = true;
+            debugLog("Reconnected", 'info');
+        })
         .catch(error => {
             debugLog(`Reconnect failed: ${error.message}`, 'error');
             setTimeout(() => attemptReconnect(connection), 5000);
@@ -1750,6 +1782,14 @@ function renderChatMessages(data) {
 
 // ── Drivers Table Update ──────────────────────────────────
 
+function buildDriverTableRowElement(rowMarkup) {
+    const template = document.createElement("template");
+    template.innerHTML = rowMarkup.trim();
+    return template.content.firstElementChild instanceof HTMLTableRowElement
+        ? template.content.firstElementChild
+        : null;
+}
+
 function updateDriversTable(data) {
     const tableBody = document.getElementById("drivers-table");
     const playerIds = new Set((data.players || []).map(player => String(player.playerId)));
@@ -1757,6 +1797,11 @@ function updateDriversTable(data) {
     Array.from(gapTrendStateByDriverId.keys()).forEach((driverId) => {
         if (!playerIds.has(driverId)) {
             gapTrendStateByDriverId.delete(driverId);
+        }
+    });
+    Array.from(driverTableRowMarkupCache.keys()).forEach((driverId) => {
+        if (!playerIds.has(driverId)) {
+            driverTableRowMarkupCache.delete(driverId);
         }
     });
 
@@ -1778,11 +1823,18 @@ function updateDriversTable(data) {
         return;
     }
 
-    let html = "";
+    tableBody.querySelectorAll("tr:not([data-driver-id])").forEach((row) => row.remove());
+
+    const existingRowsByDriverId = new Map(
+        Array.from(tableBody.querySelectorAll("tr[data-driver-id]"))
+            .map((row) => [row.dataset.driverId, row])
+    );
+    const sectorNumbers = getSectorNumbers(data);
+
     data.players.forEach((driver, index) => {
         const position = index + 1;
         const previousDriver = index > 0 ? data.players[index - 1] : null;
-        const sectorNumbers = getSectorNumbers(data);
+        const driverId = String(driver.playerId);
         const hasGapToPrevious = driver.gapToPreviousMs !== null && driver.gapToPreviousMs !== undefined;
         const isFightForPosition = hasGapToPrevious && driver.gapToPreviousMs > 0 && driver.gapToPreviousMs < 1000;
         const gapTrend = position === 1 || !previousDriver
@@ -1837,12 +1889,12 @@ function updateDriversTable(data) {
         const driverColor = driver.driverColor || "#9CA3AF";
         const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: #F5F5F5;"`;
 
-        html += `
+        const rowMarkup = `
             <tr class="driver-row${hoverClass}${selectedClass}" data-driver-id="${driver.playerId}">
                 <td class="px-4 py-3">
                     <div class="position-badge ${positionBadgeClass}">${position}</div>
                 </td>
-                <td class="px-4 py-3 font-semibold driver-name${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
+                <td class="px-4 py-3 font-semibold driver-name standings-column--driver${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-3 py-3 standings-column--laps">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
@@ -1882,9 +1934,31 @@ function updateDriversTable(data) {
                 </td>
                 <td class="px-4 py-3 text-center">${renderPitSummary(driver)}</td>
             </tr>`;
+
+        let row = existingRowsByDriverId.get(driverId) || null;
+        const previousMarkup = driverTableRowMarkupCache.get(driverId);
+
+        if (!row) {
+            row = buildDriverTableRowElement(rowMarkup);
+        } else if (previousMarkup !== rowMarkup) {
+            const nextRow = buildDriverTableRowElement(rowMarkup);
+            if (nextRow) {
+                row.className = nextRow.className;
+                row.innerHTML = nextRow.innerHTML;
+            }
+        }
+
+        if (row) {
+            tableBody.appendChild(row);
+            driverTableRowMarkupCache.set(driverId, rowMarkup);
+        }
     });
 
-    tableBody.innerHTML = html;
+    existingRowsByDriverId.forEach((row, driverId) => {
+        if (!playerIds.has(driverId)) {
+            row.remove();
+        }
+    });
 
     refreshDriverHoverState();
     refreshLapHistoryTriggerStyles();

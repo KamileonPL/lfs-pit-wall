@@ -32,7 +32,11 @@ builder.Services.AddCors(options =>
 });
 
 // Add SignalR
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+});
 
 builder.Services
     .AddOptions<TelemetryOptions>()

@@ -2002,6 +2002,10 @@ body {
     text-align: center;
 }
 
+.standings-column--driver {
+    min-width: 300px;
+}
+
 .standings-column--sectors {
     min-width: 196px;
     white-space: nowrap;
@@ -2202,6 +2206,7 @@ body {
 .driver-profile-name {
     min-width: 0;
     line-height: 1.25;
+    white-space: nowrap;
 }
 
 .driver-flag-badge {
