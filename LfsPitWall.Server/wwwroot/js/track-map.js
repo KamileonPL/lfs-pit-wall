@@ -27,9 +27,13 @@ window.TrackMapController = (() => {
     const TRACK_MAP_VELOCITY_BLEND = 0.58;
     const TRACK_MAP_MIN_JUMP_LIMIT_WORLD = 60 * 65536;
     const TRACK_MAP_MAX_JUMP_RATIO = 0.12;
-    const TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD = 1200;
+    const TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD = 1800;
     const TRACK_MAP_MAX_SEGMENT_POINT_DISTANCE_WORLD = 12000;
-    const TRACK_MAP_LINE_SMOOTHING_PASSES = 6;
+    const TRACK_MAP_LINE_SMOOTHING_PASSES = 7;
+    const TRACK_MAP_CLOSED_LINE_SMOOTHING_PASSES = 10;
+    const TRACK_MAP_MIN_LOOP_POINT_COUNT = 12;
+    const TRACK_MAP_MIN_LOOP_CLOSURE_DISTANCE_WORLD = 9000;
+    const TRACK_MAP_LOOP_SEGMENT_JOIN_DISTANCE_WORLD = 18000;
 
     function getTrackMapElements() {
         if (trackMapElements?.canvas instanceof HTMLCanvasElement) {
@@ -494,27 +498,49 @@ window.TrackMapController = (() => {
 
     function smoothTrackSegment(segment, passes) {
         let smoothed = segment.map(cloneTrackPoint);
+        const closedSegment = isClosedTrackSegment(smoothed);
+
         for (let passIndex = 0; passIndex < passes; passIndex++) {
-            if (smoothed.length < 3) {
+            const pointCount = closedSegment ? smoothed.length - 1 : smoothed.length;
+            if (pointCount < 3) {
                 break;
             }
 
-            const next = [smoothed[0]];
-            for (let index = 0; index < smoothed.length - 1; index++) {
-                const left = smoothed[index];
-                const right = smoothed[index + 1];
-                next.push({
-                    node: left.node,
-                    x: (left.x * 0.75) + (right.x * 0.25),
-                    y: (left.y * 0.75) + (right.y * 0.25)
-                });
-                next.push({
-                    node: right.node,
-                    x: (left.x * 0.25) + (right.x * 0.75),
-                    y: (left.y * 0.25) + (right.y * 0.75)
-                });
+            const next = smoothed.map(cloneTrackPoint);
+
+            if (closedSegment) {
+                for (let index = 0; index < pointCount; index++) {
+                    const previousPoint = smoothed[(index - 1 + pointCount) % pointCount];
+                    const currentPoint = smoothed[index];
+                    const nextPoint = smoothed[(index + 1) % pointCount];
+
+                    next[index] = {
+                        node: currentPoint.node,
+                        x: (previousPoint.x * 0.18) + (currentPoint.x * 0.64) + (nextPoint.x * 0.18),
+                        y: (previousPoint.y * 0.18) + (currentPoint.y * 0.64) + (nextPoint.y * 0.18)
+                    };
+                }
+
+                next[pointCount] = cloneTrackPoint(next[0]);
+                smoothed = next;
+                continue;
             }
-            next.push(smoothed[smoothed.length - 1]);
+
+            next[0] = cloneTrackPoint(smoothed[0]);
+            next[pointCount - 1] = cloneTrackPoint(smoothed[pointCount - 1]);
+
+            for (let index = 1; index < pointCount - 1; index++) {
+                const previousPoint = smoothed[index - 1];
+                const currentPoint = smoothed[index];
+                const nextPoint = smoothed[index + 1];
+
+                next[index] = {
+                    node: currentPoint.node,
+                    x: (previousPoint.x * 0.2) + (currentPoint.x * 0.6) + (nextPoint.x * 0.2),
+                    y: (previousPoint.y * 0.2) + (currentPoint.y * 0.6) + (nextPoint.y * 0.2)
+                };
+            }
+
             smoothed = next;
         }
 
@@ -526,13 +552,202 @@ window.TrackMapController = (() => {
             return [];
         }
 
+        const closedSegment = closeTrackSegmentLoop(segment, medianDistance);
         const minimumDistance = Math.max(
             TRACK_MAP_MIN_SEGMENT_POINT_DISTANCE_WORLD,
             Math.min(TRACK_MAP_MAX_SEGMENT_POINT_DISTANCE_WORLD, medianDistance * 0.35)
         );
-        const simplifiedSegment = simplifyTrackSegment(segment, minimumDistance);
-        const smoothedSegment = smoothTrackSegment(simplifiedSegment, TRACK_MAP_LINE_SMOOTHING_PASSES);
+        const simplifiedSegment = simplifyTrackSegment(closedSegment, minimumDistance);
+        const smoothingPasses = isClosedTrackSegment(closedSegment)
+            ? TRACK_MAP_CLOSED_LINE_SMOOTHING_PASSES
+            : TRACK_MAP_LINE_SMOOTHING_PASSES;
+        const smoothedSegment = smoothTrackSegment(simplifiedSegment, smoothingPasses);
         return smoothedSegment.length >= 3 ? smoothedSegment : simplifiedSegment;
+    }
+
+    function shouldCloseTrackSegment(segment, medianDistance) {
+        if (!Array.isArray(segment) || segment.length < TRACK_MAP_MIN_LOOP_POINT_COUNT) {
+            return false;
+        }
+
+        const firstPoint = segment[0];
+        const lastPoint = segment[segment.length - 1];
+        const closureDistance = getTrackPointDistance(firstPoint, lastPoint);
+        const closureThreshold = Math.max(
+            TRACK_MAP_MIN_LOOP_CLOSURE_DISTANCE_WORLD,
+            medianDistance * 2.2
+        );
+
+        return closureDistance <= closureThreshold;
+    }
+
+    function closeTrackSegmentLoop(segment, medianDistance) {
+        if (!shouldCloseTrackSegment(segment, medianDistance)) {
+            return segment.map(cloneTrackPoint);
+        }
+
+        const closedSegment = segment.map(cloneTrackPoint);
+        if (!isClosedTrackSegment(closedSegment)) {
+            closedSegment.push(cloneTrackPoint(closedSegment[0]));
+        }
+
+        return closedSegment;
+    }
+
+    function isClosedTrackSegment(segment) {
+        if (!Array.isArray(segment) || segment.length < 4) {
+            return false;
+        }
+
+        return getTrackPointDistance(segment[0], segment[segment.length - 1]) <= 1;
+    }
+
+    function getTrackSegmentLength(segment) {
+        if (!Array.isArray(segment) || segment.length < 2) {
+            return 0;
+        }
+
+        const closedSegment = isClosedTrackSegment(segment);
+        const renderPoints = closedSegment ? segment.slice(0, -1) : segment;
+        if (renderPoints.length < 2) {
+            return 0;
+        }
+
+        let totalLength = 0;
+        for (let index = 1; index < renderPoints.length; index++) {
+            totalLength += getTrackPointDistance(renderPoints[index - 1], renderPoints[index]);
+        }
+
+        if (closedSegment) {
+            totalLength += getTrackPointDistance(renderPoints[renderPoints.length - 1], renderPoints[0]);
+        }
+
+        return totalLength;
+    }
+
+    function pruneTrackMapSegments(segments) {
+        if (!Array.isArray(segments) || segments.length <= 1) {
+            return Array.isArray(segments) ? segments : [];
+        }
+
+        const segmentDescriptors = segments
+            .map((segment) => ({
+                segment,
+                isClosed: isClosedTrackSegment(segment),
+                length: getTrackSegmentLength(segment)
+            }))
+            .filter((descriptor) => descriptor.length > 0)
+            .sort((left, right) => right.length - left.length);
+
+        if (segmentDescriptors.length <= 1) {
+            return segmentDescriptors.map((descriptor) => descriptor.segment);
+        }
+
+        const dominantClosedSegment = segmentDescriptors.find((descriptor) => descriptor.isClosed);
+        if (!dominantClosedSegment) {
+            return segmentDescriptors.map((descriptor) => descriptor.segment);
+        }
+
+        const nextLongestLength = segmentDescriptors
+            .filter((descriptor) => descriptor !== dominantClosedSegment)
+            .map((descriptor) => descriptor.length)
+            .sort((left, right) => right - left)[0] || 0;
+
+        if (nextLongestLength > 0 && dominantClosedSegment.length < nextLongestLength * 1.8) {
+            return segmentDescriptors.map((descriptor) => descriptor.segment);
+        }
+
+        return [dominantClosedSegment.segment];
+    }
+
+    function tryJoinLoopSegments(rawSegments, medianDistance) {
+        if (!Array.isArray(rawSegments) || rawSegments.length < 2) {
+            return rawSegments;
+        }
+
+        const firstSegment = rawSegments[0];
+        const lastSegment = rawSegments[rawSegments.length - 1];
+        if (!Array.isArray(firstSegment) || !Array.isArray(lastSegment) || firstSegment.length === 0 || lastSegment.length === 0) {
+            return rawSegments;
+        }
+
+        const firstPoint = firstSegment[0];
+        const lastPoint = lastSegment[lastSegment.length - 1];
+        const closureDistance = getTrackPointDistance(lastPoint, firstPoint);
+        const closureThreshold = Math.max(
+            TRACK_MAP_LOOP_SEGMENT_JOIN_DISTANCE_WORLD,
+            medianDistance * 3
+        );
+
+        if (closureDistance > closureThreshold) {
+            return rawSegments;
+        }
+
+        const middleSegments = rawSegments.slice(1, -1);
+        return [
+            [...lastSegment, ...firstSegment],
+            ...middleSegments
+        ];
+    }
+
+    function traceTrackSegmentPath(context, segment, toCanvasPoint) {
+        if (!Array.isArray(segment) || segment.length < 2) {
+            return false;
+        }
+
+        const closedSegment = isClosedTrackSegment(segment);
+        const renderPoints = closedSegment ? segment.slice(0, -1) : segment;
+        const canvasPoints = renderPoints.map((point) => toCanvasPoint(point.x, point.y));
+
+        if (canvasPoints.length < 2) {
+            return false;
+        }
+
+        if (closedSegment && canvasPoints.length >= 3) {
+            const lastPoint = canvasPoints[canvasPoints.length - 1];
+            const firstPoint = canvasPoints[0];
+            const startMidPoint = {
+                x: (lastPoint.x + firstPoint.x) / 2,
+                y: (lastPoint.y + firstPoint.y) / 2
+            };
+
+            context.moveTo(startMidPoint.x, startMidPoint.y);
+
+            for (let index = 0; index < canvasPoints.length; index++) {
+                const currentPoint = canvasPoints[index];
+                const nextPoint = canvasPoints[(index + 1) % canvasPoints.length];
+                const nextMidPoint = {
+                    x: (currentPoint.x + nextPoint.x) / 2,
+                    y: (currentPoint.y + nextPoint.y) / 2
+                };
+
+                context.quadraticCurveTo(currentPoint.x, currentPoint.y, nextMidPoint.x, nextMidPoint.y);
+            }
+
+            return true;
+        }
+
+        context.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+
+        if (canvasPoints.length === 2) {
+            context.lineTo(canvasPoints[1].x, canvasPoints[1].y);
+            return true;
+        }
+
+        for (let index = 1; index < canvasPoints.length - 1; index++) {
+            const currentPoint = canvasPoints[index];
+            const nextPoint = canvasPoints[index + 1];
+            const midPoint = {
+                x: (currentPoint.x + nextPoint.x) / 2,
+                y: (currentPoint.y + nextPoint.y) / 2
+            };
+
+            context.quadraticCurveTo(currentPoint.x, currentPoint.y, midPoint.x, midPoint.y);
+        }
+
+        const lastPoint = canvasPoints[canvasPoints.length - 1];
+        context.lineTo(lastPoint.x, lastPoint.y);
+        return true;
     }
 
     function buildTrackMapGeometry(trackPoints) {
@@ -552,7 +767,8 @@ window.TrackMapController = (() => {
         const sortedDistances = [...distances].sort((left, right) => left - right);
         const medianDistance = sortedDistances[Math.floor(sortedDistances.length / 2)] || 1;
         const breakThreshold = Math.max(medianDistance * 3.5, 8000);
-        const segments = [];
+        const rawSegments = [];
+        let segments = [];
         let currentSegment = [trackPoints[0]];
 
         for (let index = 1; index < trackPoints.length; index++) {
@@ -561,11 +777,7 @@ window.TrackMapController = (() => {
             const distance = getTrackPointDistance(previousPoint, currentPoint);
 
             if (distance > breakThreshold) {
-                const finalizedSegment = finalizeTrackSegment(currentSegment, medianDistance);
-                if (finalizedSegment.length >= 3) {
-                    segments.push(finalizedSegment);
-                }
-
+                rawSegments.push(currentSegment);
                 currentSegment = [currentPoint];
                 continue;
             }
@@ -573,10 +785,16 @@ window.TrackMapController = (() => {
             currentSegment.push(currentPoint);
         }
 
-        const finalizedSegment = finalizeTrackSegment(currentSegment, medianDistance);
-        if (finalizedSegment.length >= 3) {
-            segments.push(finalizedSegment);
-        }
+        rawSegments.push(currentSegment);
+
+        tryJoinLoopSegments(rawSegments, medianDistance).forEach((rawSegment) => {
+            const finalizedSegment = finalizeTrackSegment(rawSegment, medianDistance);
+            if (finalizedSegment.length >= 3) {
+                segments.push(finalizedSegment);
+            }
+        });
+
+        segments = pruneTrackMapSegments(segments);
 
         return {
             segments,
@@ -590,11 +808,44 @@ window.TrackMapController = (() => {
             return null;
         }
 
+        let minX = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+
+        boundsPoints.forEach((point) => {
+            const x = Number(point.x);
+            const y = Number(point.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return;
+            }
+
+            if (x < minX) {
+                minX = x;
+            }
+
+            if (x > maxX) {
+                maxX = x;
+            }
+
+            if (y < minY) {
+                minY = y;
+            }
+
+            if (y > maxY) {
+                maxY = y;
+            }
+        });
+
+        if (![minX, maxX, minY, maxY].every(Number.isFinite)) {
+            return null;
+        }
+
         return {
-            minX: Math.min(...boundsPoints.map((point) => Number(point.x))),
-            maxX: Math.max(...boundsPoints.map((point) => Number(point.x))),
-            minY: Math.min(...boundsPoints.map((point) => Number(point.y))),
-            maxY: Math.max(...boundsPoints.map((point) => Number(point.y)))
+            minX,
+            maxX,
+            minY,
+            maxY
         };
     }
 
@@ -879,25 +1130,10 @@ window.TrackMapController = (() => {
             context.lineCap = "round";
             trackGeometry.segments.forEach((segment) => {
                 context.beginPath();
-                segment.forEach((point, index) => {
-                    const canvasPoint = toCanvasPoint(point.x, point.y);
-                    if (index === 0) {
-                        context.moveTo(canvasPoint.x, canvasPoint.y);
-                    } else {
-                        context.lineTo(canvasPoint.x, canvasPoint.y);
-                    }
-                });
-                context.stroke();
+                if (traceTrackSegmentPath(context, segment, toCanvasPoint)) {
+                    context.stroke();
+                }
             });
-        }
-
-        const startPoint = trackGeometry.segments[0]?.[0];
-        if (startPoint) {
-            const canvasPoint = toCanvasPoint(startPoint.x, startPoint.y);
-            context.fillStyle = "rgba(250, 204, 21, 0.95)";
-            context.beginPath();
-            context.arc(canvasPoint.x, canvasPoint.y, 5.5, 0, Math.PI * 2);
-            context.fill();
         }
 
         const drawOrder = [...drivers].sort((left, right) => {

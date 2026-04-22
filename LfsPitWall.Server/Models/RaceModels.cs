@@ -60,9 +60,15 @@ public class TimingPointSnapshot
 /// </summary>
 public class TrackMapNodeSample
 {
-    private const int MaxStoredSamples = 41;
+    private const int MaxStoredSamples = 81;
+    private const double EarlySampleSmoothingFactor = 0.34;
+    private const double MidSampleSmoothingFactor = 0.18;
+    private const double SettledSampleSmoothingFactor = 0.08;
     public const uint DeferredSortOrder = uint.MaxValue;
     private readonly List<TrackMapRawSample> _samples = new();
+    private double _stabilizedX;
+    private double _stabilizedY;
+    private bool _hasStabilizedPoint;
 
     public ushort Node { get; set; }
     public uint SampleCount { get; private set; }
@@ -78,6 +84,25 @@ public class TrackMapNodeSample
         }
 
         _samples.Add(new TrackMapRawSample(x, y));
+
+        var representativePoint = BuildRepresentativePoint();
+        if (!_hasStabilizedPoint)
+        {
+            _stabilizedX = representativePoint.X;
+            _stabilizedY = representativePoint.Y;
+            _hasStabilizedPoint = true;
+            return;
+        }
+
+        var smoothingFactor = SampleCount switch
+        {
+            < 8 => EarlySampleSmoothingFactor,
+            < 20 => MidSampleSmoothingFactor,
+            _ => SettledSampleSmoothingFactor
+        };
+
+        _stabilizedX += (representativePoint.X - _stabilizedX) * smoothingFactor;
+        _stabilizedY += (representativePoint.Y - _stabilizedY) * smoothingFactor;
     }
 
     public TrackMapPoint ToPoint()
@@ -87,17 +112,64 @@ public class TrackMapNodeSample
             return new TrackMapPoint { Node = Node };
         }
 
-        var orderedX = _samples.Select(sample => sample.X).OrderBy(value => value).ToList();
-        var orderedY = _samples.Select(sample => sample.Y).OrderBy(value => value).ToList();
-        var medianX = orderedX[orderedX.Count / 2];
-        var medianY = orderedY[orderedY.Count / 2];
+        if (_hasStabilizedPoint)
+        {
+            return new TrackMapPoint
+            {
+                Node = Node,
+                X = (int)Math.Round(_stabilizedX),
+                Y = (int)Math.Round(_stabilizedY)
+            };
+        }
+
+        var representativePoint = BuildRepresentativePoint();
 
         return new TrackMapPoint
         {
             Node = Node,
-            X = medianX,
-            Y = medianY
+            X = representativePoint.X,
+            Y = representativePoint.Y
         };
+    }
+
+    private TrackMapPoint BuildRepresentativePoint()
+    {
+        var orderedX = _samples.Select(sample => sample.X).OrderBy(value => value).ToList();
+        var orderedY = _samples.Select(sample => sample.Y).OrderBy(value => value).ToList();
+        var representativeX = BuildRepresentativeCoordinate(orderedX);
+        var representativeY = BuildRepresentativeCoordinate(orderedY);
+
+        return new TrackMapPoint
+        {
+            Node = Node,
+            X = representativeX,
+            Y = representativeY
+        };
+    }
+
+    private static int BuildRepresentativeCoordinate(IReadOnlyList<int> orderedValues)
+    {
+        if (orderedValues.Count == 0)
+        {
+            return 0;
+        }
+
+        var trimCount = orderedValues.Count >= 10 ? Math.Max(1, orderedValues.Count / 5) : 0;
+        var startIndex = trimCount;
+        var endIndex = orderedValues.Count - trimCount;
+
+        if (endIndex <= startIndex)
+        {
+            return orderedValues[orderedValues.Count / 2];
+        }
+
+        long sum = 0;
+        for (var index = startIndex; index < endIndex; index++)
+        {
+            sum += orderedValues[index];
+        }
+
+        return (int)Math.Round(sum / (double)(endIndex - startIndex));
     }
 
     private readonly record struct TrackMapRawSample(int X, int Y);
