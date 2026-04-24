@@ -34,6 +34,20 @@ window.TrackMapController = (() => {
     const TRACK_MAP_MIN_LOOP_POINT_COUNT = 12;
     const TRACK_MAP_MIN_LOOP_CLOSURE_DISTANCE_WORLD = 9000;
     const TRACK_MAP_LOOP_SEGMENT_JOIN_DISTANCE_WORLD = 18000;
+    const TRACK_MAP_FALLBACK_DRIVER_COLORS = [
+        "#ef4444",
+        "#3b82f6",
+        "#f59e0b",
+        "#10b981",
+        "#8b5cf6",
+        "#ec4899",
+        "#06b6d4",
+        "#84cc16",
+        "#f97316",
+        "#6366f1",
+        "#14b8a6",
+        "#eab308"
+    ];
 
     function getTrackMapElements() {
         if (trackMapElements?.canvas instanceof HTMLCanvasElement) {
@@ -944,8 +958,27 @@ window.TrackMapController = (() => {
             .trim();
     }
 
-    function getTrackMapDriverLabelSegments(driver) {
-        const fallbackColor = driver?.driverColor || "#cbd5e1";
+    function resolveTrackMapDriverColor(driver, fallbackIndex = 0) {
+        const rawColor = String(driver?.driverColor || "").trim();
+        if (rawColor) {
+            const canUseChartNeutralCheck = typeof isNeutralStandingsDisplayColor === "function";
+            if (!canUseChartNeutralCheck || !isNeutralStandingsDisplayColor(rawColor)) {
+                return rawColor;
+            }
+        }
+
+        if (typeof getStandingsChartSeriesColor === "function") {
+            return getStandingsChartSeriesColor(fallbackIndex);
+        }
+
+        const numericIndex = Number.isFinite(Number(fallbackIndex)) && Number(fallbackIndex) >= 0
+            ? Number(fallbackIndex)
+            : 0;
+        return TRACK_MAP_FALLBACK_DRIVER_COLORS[numericIndex % TRACK_MAP_FALLBACK_DRIVER_COLORS.length];
+    }
+
+    function getTrackMapDriverLabelSegments(driver, fallbackIndex = 0) {
+        const fallbackColor = resolveTrackMapDriverColor(driver, fallbackIndex);
         const fallbackText = stripLfsControlCodes(driver?.name) || String(driver?.username || "").trim() || "Driver";
         const sourceHtml = String(driver?.mapLabelHtml || driver?.nameHtml || "").trim();
 
@@ -1049,7 +1082,7 @@ window.TrackMapController = (() => {
             const driverId = String(driver.playerId);
             const isHovered = hoveredDriverId === driverId;
             const isSelected = selectedDriverIds.has(driverId);
-            const driverColor = driver.driverColor || "#cbd5e1";
+            const driverColor = resolveTrackMapDriverColor(driver, index);
             const driverName = driver.nameHtml || driver.name || "Unknown driver";
             const meta = driver.carName || "-";
             const status = getTrackLegendStatus(driver);
@@ -1141,6 +1174,10 @@ window.TrackMapController = (() => {
             const rightPosition = Number(right.currentRacePosition || 999);
             return rightPosition - leftPosition;
         });
+        const trackMapDriverColors = new Map(drivers.map((driver, index) => [
+            String(driver.playerId),
+            resolveTrackMapDriverColor(driver, index)
+        ]));
 
         drawOrder.forEach((driver) => {
             const point = toCanvasPoint(driver.mapX, driver.mapY);
@@ -1148,7 +1185,7 @@ window.TrackMapController = (() => {
             const isSelected = selectedDriverIds.has(String(driver.playerId));
             const radius = Number(driver.currentRacePosition) === 1 ? 8 : 6;
             const renderedRadius = radius + (isSelected ? 3 : 0) + (isHovered ? 2.5 : 0);
-            const primaryColor = driver.driverColor || "#cbd5e1";
+            const primaryColor = trackMapDriverColors.get(String(driver.playerId)) || "#cbd5e1";
             const outlineColor = driver.pitStatus === "service"
                 ? "#fbbf24"
                 : driver.pitStatus === "lane"
@@ -1194,7 +1231,10 @@ window.TrackMapController = (() => {
             }
 
             if (isSelected) {
-                const labelSegments = getTrackMapDriverLabelSegments(driver);
+                const labelSegments = getTrackMapDriverLabelSegments(
+                    driver,
+                    drivers.findIndex((candidate) => String(candidate.playerId) === String(driver.playerId))
+                );
                 const labelY = point.y - renderedRadius - 18;
                 context.font = "600 12px Segoe UI";
                 context.textBaseline = "middle";
