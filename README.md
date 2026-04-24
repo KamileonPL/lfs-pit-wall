@@ -62,25 +62,6 @@ dotnet run --project "LfsPitWall.Server/LfsPitWall.Server.csproj"
 
 5. Open the local dashboard in your browser.
 
-## Current Focus
-
-`v0.3` focuses on a stronger live race-day dashboard plus a lightweight archive browser:
-
-- real-time session visibility with a lightweight web UI
-- a live track map that stays readable during racing, spectating, and pit activity
-- lower frontend overhead through cached map geometry and paused hidden-map rendering
-- a clean in-memory session model that is ready for future history and persistence features
-
-## New In v0.3
-
-- Live standings can be toggled into a live track map view
-- Driver legend is compact, scrollable, and synchronized with visible map drivers
-- Map rendering ignores stale telemetry, pit-lane noise, and race-start grid distortion
-- Same-track race restarts preserve collected map geometry instead of rebuilding from scratch
-- Version metadata is surfaced consistently through the app footer and app metadata endpoint
-- Archived sessions can be browsed through a JS-first archive viewer with official LFS results when available
-- Archive indexing reuses cached file summaries to reduce repeated JSON parsing and disk I/O
-
 ## Project Structure
 
 - [LfsPitWall.Server](LfsPitWall.Server) - ASP.NET Core app, InSim client, SignalR hub, session model
@@ -274,10 +255,4 @@ Contributions are welcome.
 
 - Open an issue if something is broken or unclear
 - Open a pull request if you want to improve the app
-- AI-assisted changes are fine, but reviewable PR quality still matters
-
-## Status
-
-Current project version: `v0.3`
-
-The project already works as a solid live timing dashboard with a usable live map, and is being extended carefully toward a broader pit-wall style tool.
+- AI-assisted changes are fine, but quality matters
