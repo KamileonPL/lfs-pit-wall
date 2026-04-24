@@ -41,8 +41,15 @@ It is designed to be fast to run, easy to understand, and practical for real ses
     "InSim": {
         "Host": "127.0.0.1",
         "Port": 29999,
-        "Name": "LFS Pit Wall",
-        "AdminPassword": ""
+        "AdminPassword": "YourPasswordHere"
+    },
+    // ...
+    "PlayerOnboarding": {
+        "PublicUrl": "YourWebsiteUrlHere"
+    },
+    // ...
+    "Pubstat": {
+        "IdentKey": "YourIdentKeyHere",
     }
 }
 ```
