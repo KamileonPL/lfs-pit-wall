@@ -1592,15 +1592,15 @@ function positionStandingsChartTooltip(chart, tooltipModel, tooltipElement) {
     const tooltipWidth = tooltipElement.offsetWidth;
     const tooltipHeight = tooltipElement.offsetHeight;
 
-    let left = rect.left + window.scrollX + tooltipModel.caretX + margin;
-    let top = rect.top + window.scrollY + tooltipModel.caretY - (tooltipHeight / 2);
+    let left = rect.left + tooltipModel.caretX + margin;
+    let top = rect.top + tooltipModel.caretY - (tooltipHeight / 2);
 
-    if (left + tooltipWidth > window.scrollX + window.innerWidth - margin) {
-        left = rect.left + window.scrollX + tooltipModel.caretX - tooltipWidth - margin;
+    if (left + tooltipWidth > window.innerWidth - margin) {
+        left = rect.left + tooltipModel.caretX - tooltipWidth - margin;
     }
 
-    left = Math.max(window.scrollX + margin, left);
-    top = Math.max(window.scrollY + margin, Math.min(top, window.scrollY + window.innerHeight - tooltipHeight - margin));
+    left = Math.max(margin, left);
+    top = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
 
     tooltipElement.style.left = `${Math.round(left)}px`;
     tooltipElement.style.top = `${Math.round(top)}px`;
