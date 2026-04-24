@@ -452,6 +452,11 @@ public class InSimService : BackgroundService
                     leadingPlayerId = car.PLID;
                 }
 
+                if (useSpatialTrackMapKeying && !_referenceTrackMapPlayerId.HasValue)
+                {
+                    _referenceTrackMapPlayerId = leadingPlayerId ?? car.PLID;
+                }
+
                 var trackMapKey = useSpatialTrackMapKeying
                     ? BuildCustomTrackMapKey(car.X, car.Y)
                     : car.Node;
@@ -522,6 +527,7 @@ public class InSimService : BackgroundService
     private bool ShouldUseRelaxedTrackMapSampling()
     {
         return _raceSession.ActiveSectorCount == 0
+            || _raceSession.SessionType == 1
             || _hasObservedAutocrossLayout
             || IsLikelyCustomLayoutTrack(_raceSession.TrackName);
     }
