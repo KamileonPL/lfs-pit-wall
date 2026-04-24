@@ -2926,6 +2926,7 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3 font-semibold driver-name standings-column--driver${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
                 <td class="px-3 py-3 standings-column--laps">${driver.lapsCompleted}</td>
+                <td class="px-3 py-3 text-center standings-column--pits">${renderPitSummary(driver)}</td>
                 <td class="px-4 py-3 font-mono text-sm">
                     <div class="lap-time-cell lap-history-trigger${isLapHistoryActive ? ' is-active' : ''}" data-last-lap-driver-id="${driver.playerId}">
                         <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
@@ -2961,7 +2962,6 @@ function updateDriversTable(data) {
                 <td class="px-4 py-3">
                     ${renderTyreSummary(driver.tyreTypes)}
                 </td>
-                <td class="px-4 py-3 text-center">${renderPitSummary(driver)}</td>
             </tr>`;
 
         let row = existingRowsByDriverId.get(driverId) || null;

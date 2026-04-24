@@ -2408,6 +2408,12 @@ body {
     text-align: center;
 }
 
+.standings-column--pits {
+    width: 1%;
+    white-space: nowrap;
+    text-align: center;
+}
+
 .standings-column--driver {
     min-width: 284px;
 }
