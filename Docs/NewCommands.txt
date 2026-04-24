@@ -1,0 +1,54 @@
+Text commands
+
+
+/time
+
+/time (report current time status)
+/time live (set live time)
+/time offset +4 +4:00 (optional +- days / optional +- hours:mins)
+/time set 23 Jan 16:00 utc+5 (date optional / time optional / utc +- offset optional)
+/time mul 1 (0 to 240 - only for set time mode)
+/time demo [morning/afternoon/sunset]
+
+If you only specify time or date the other one is unaffected. If you don't specify the utc offset then it is in local time zone for that track. You are free to use a single digit for minutes.
+
+
+/flood [yes/no] switch floodlights on or off
+
+
+/spec_all spectate all players
+
+
+/ss - take a screenshot and save in data\shots (like CTRL+S)
+
+
+/h - execute the following command as if typed on host
+
+e.g. /h player Host Name
+
+
+/grid - various options to control how non-admins can modify the grid
+
+/grid open/self/lock (can non-admins join / leave the grid or move others around in game setup screen)
+
+/grid open self lock
+JOIN RACE Y Y N
+REMOVE SELF Y Y N
+REMOVE OTHERS Y N N
+MOVE PLAYERS Y N N
+
+/grid static X (affects grid rearrangement on race restart after qualifying or finished race)
+
+The first X grid slots are protected from auto rearranging when the race restarts.
+The first X grid slots are unaffected by the result of qualifying or race finish, on restart.
+
+/grid real no/yes (can real players join in game or game setup screen)
+
+/grid ai no/yes (can AI players join in game or game setup screen)
+
+You can also get the current settings:
+
+/grid - show the current grid lock setting
+/grid static - show the current static setting
+/grid ai - show the current ai setting
+/grid real - show the current real setting
