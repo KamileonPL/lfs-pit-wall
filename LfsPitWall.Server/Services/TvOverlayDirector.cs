@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using LfsPitWall.Server.Models;
+using Microsoft.Extensions.Options;
 
 namespace LfsPitWall.Server.Services;
 
@@ -24,6 +25,7 @@ public sealed class TvOverlayDirector
     private readonly HashSet<string> _subscribers = new(StringComparer.Ordinal);
     private readonly Dictionary<int, uint> _bestSectorTimes = new();
     private readonly List<OverlayPopupState> _activePopups = new();
+    private readonly TvOverlayOptions _tvOverlayOptions;
 
     // State tracking for event-based popups
     private readonly Dictionary<byte, int> _lastDriverOrder = new();
@@ -34,6 +36,11 @@ public sealed class TvOverlayDirector
     private uint _bestLapTimeMs;
     private string _bestLapAuthorKey = string.Empty;
     private long _popupSequence;
+
+    public TvOverlayDirector(IOptions<TvOverlayOptions> tvOverlayOptions)
+    {
+        _tvOverlayOptions = tvOverlayOptions.Value;
+    }
 
     public bool HasSubscribers
     {
@@ -110,7 +117,9 @@ public sealed class TvOverlayDirector
             ProgressRatio = BuildProgressRatio(session, leader),
             RotationLabel = GetMetricModeLabel(metricMode),
             StandingsWindowLabel = BuildWindowLabel(orderedDrivers.Count, visibleDrivers.Count, session.SessionTimeMs),
-            ViewedDriver = BuildViewedDriver(session, bestSectorInfos),
+            ViewedDriver = _tvOverlayOptions.ShowViewedDriverPanel
+                ? BuildViewedDriver(session, bestSectorInfos)
+                : null,
             Entries = BuildEntries(session, orderedDrivers, visibleDrivers, metricMode),
             Popups = popups,
             UpdatedAt = DateTime.UtcNow.ToString("O")

@@ -10,6 +10,10 @@ builder.Services
     .AddOptions<UiOptions>()
     .Bind(builder.Configuration.GetSection(UiOptions.SectionName));
 
+builder.Services
+    .AddOptions<TvOverlayOptions>()
+    .Bind(builder.Configuration.GetSection(TvOverlayOptions.SectionName));
+
 var showDebugConsole = builder.Configuration.GetValue<bool?>($"{UiOptions.SectionName}:ShowDebugConsole") ?? true;
 var appMetadata = AppMetadataProvider.Get(showDebugConsole);
 

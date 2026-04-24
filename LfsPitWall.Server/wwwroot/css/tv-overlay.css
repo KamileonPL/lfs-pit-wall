@@ -413,6 +413,10 @@ body {
     padding: 7px 14px 8px;
 }
 
+.tv-overlay-focus-panel[hidden] {
+    display: none !important;
+}
+
 .tv-overlay-focus-panel.is-tv-camera {
     top: auto;
     bottom: clamp(96px, 10vh, 156px);
