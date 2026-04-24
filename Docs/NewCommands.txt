@@ -1,5 +1,4 @@
-Text commands
-
+New Text commands
 
 /time
 
@@ -12,23 +11,13 @@ Text commands
 
 If you only specify time or date the other one is unaffected. If you don't specify the utc offset then it is in local time zone for that track. You are free to use a single digit for minutes.
 
-
 /flood [yes/no] switch floodlights on or off
-
-
 /spec_all spectate all players
-
-
 /ss - take a screenshot and save in data\shots (like CTRL+S)
-
-
 /h - execute the following command as if typed on host
-
 e.g. /h player Host Name
 
-
 /grid - various options to control how non-admins can modify the grid
-
 /grid open/self/lock (can non-admins join / leave the grid or move others around in game setup screen)
 
 /grid open self lock
