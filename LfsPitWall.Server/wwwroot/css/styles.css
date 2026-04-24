@@ -242,6 +242,12 @@ body {
     min-width: 0;
 }
 
+.session-summary-cell > p:last-child:not(.session-summary-track-name) {
+    min-width: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
 .session-summary-track-name {
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -321,11 +327,11 @@ body {
 
 @media (min-width: 640px) {
     .session-summary-grid {
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 2.2fr) minmax(110px, 1.3fr) repeat(4, minmax(72px, 0.8fr));
     }
 
     .session-summary-cell--track {
-        grid-column: span 2;
+        grid-column: auto;
     }
 }
 
