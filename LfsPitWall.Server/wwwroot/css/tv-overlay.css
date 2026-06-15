@@ -1,5 +1,6 @@
 :root {
     color-scheme: dark;
+    --overlay-font-family: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
     --panel-bg: linear-gradient(145deg, rgba(7, 12, 20, 0.88), rgba(9, 19, 30, 0.72));
     --panel-border: rgba(255, 255, 255, 0.14);
     --panel-shadow: 0 20px 45px rgba(0, 0, 0, 0.34);
@@ -12,8 +13,8 @@
     --accent-blue: #6bc8ff;
 
     /* Width controls for left rail panels */
-    --overlay-rail-min: 320px;
-    --overlay-rail-max: 360px;
+    --overlay-rail-min: 384px;
+    --overlay-rail-max: 476px;
 }
 
 html,
@@ -23,11 +24,20 @@ body {
     margin: 0;
     overflow: hidden;
     background: transparent;
-    font-family: Bahnschrift, "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--overlay-font-family);
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
 }
 
 body {
     color: var(--text-strong);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    font-optical-sizing: auto;
 }
 
 .tv-overlay-root {
@@ -46,12 +56,14 @@ body {
 
 .tv-overlay-left-rail {
     position: absolute;
-    top: 24px;
-    left: 28px;
+    top: 22px;
+    bottom: 22px;
+    left: 26px;
     display: flex;
     flex-direction: column;
     gap: 14px;
-    width: clamp(var(--overlay-rail-min), 23vw, var(--overlay-rail-max));
+    width: clamp(var(--overlay-rail-min), 25vw, var(--overlay-rail-max));
+    overflow: visible;
 }
 
 .tv-overlay-progress-card,
@@ -61,12 +73,29 @@ body {
     margin: 0 auto;
 }
 
+.tv-overlay-standings-shell {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
+.tv-overlay-side-column {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 18px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(24vw, 420px);
+}
+
 .tv-overlay-header {
     position: relative;
 }
 
 .tv-overlay-progress-card,
 .tv-overlay-standings-panel,
+.tv-overlay-focus-panel,
 .tv-overlay-popup {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
@@ -80,16 +109,16 @@ body {
 }
 
 .tv-overlay-progress-card {
-    padding: 12px 16px 12px;
+    padding: 14px 18px 14px;
 }
 
 .tv-overlay-kicker,
 .tv-overlay-panel-title {
     margin: 0;
     color: var(--text-muted);
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.2em;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
 }
 
 .tv-overlay-progress-context,
@@ -97,34 +126,36 @@ body {
 .tv-overlay-panel-subtitle {
     margin: 0;
     color: var(--text-soft);
-    font-size: 0.78rem;
+    font-size: 0.84rem;
     letter-spacing: 0.08em;
 }
 
 .tv-overlay-progress-context {
     color: rgba(246, 251, 255, 0.88);
-    font-size: 0.74rem;
+    font-size: 0.8rem;
     font-weight: 700;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
 }
 
 .tv-overlay-progress-copy {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
 }
 
 .tv-overlay-progress-value {
     margin: 0;
-    font-size: clamp(1.38rem, 1.85vw, 2rem);
-    font-weight: 800;
-    letter-spacing: 0.06em;
+    font-size: clamp(1.56rem, 2.15vw, 2.28rem);
+    font-weight: 700;
+    letter-spacing: 0.05em;
     line-height: 1;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
 }
 
 .tv-overlay-progress-bar-shell {
-    height: 6px;
-    margin-top: 10px;
+    height: 8px;
+    margin-top: 12px;
     overflow: hidden;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
@@ -141,8 +172,12 @@ body {
 .tv-overlay-standings-panel {
     position: relative;
     width: 100%;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     border-radius: 26px;
-    padding: 14px 14px 12px;
+    padding: 16px 16px 14px;
 }
 
 .tv-overlay-panel-header {
@@ -150,28 +185,32 @@ body {
     align-items: end;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
 }
 
 .tv-overlay-rotation-chip {
-    padding: 8px 12px;
+    padding: 9px 13px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-strong);
-    font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.12em;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
 }
 
 .tv-overlay-standings-list {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    justify-content: flex-start;
     gap: 6px;
 }
 
 .tv-overlay-divider {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    flex: 0 0 auto;
     align-items: center;
     gap: 8px;
     padding: 4px 4px 2px;
@@ -184,58 +223,81 @@ body {
 
 .tv-overlay-divider-label {
     color: var(--text-muted);
-    font-size: 0.62rem;
-    font-weight: 900;
-    letter-spacing: 0.18em;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
 }
 
 .tv-overlay-entry {
+    position: relative;
     display: grid;
-    grid-template-columns: 38px 34px minmax(0, 1fr) 78px 50px;
-    gap: 7px;
+    grid-template-columns: 38px 44px minmax(0, 1fr) fit-content(118px) auto;
+    flex: 1 1 0;
+    gap: 6px;
     align-items: center;
-    min-height: 36px;
-    padding: 7px 9px;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.045);
-    border: 1px solid transparent;
+    min-height: clamp(44px, 3.4vh, 54px);
+    padding: 8px 9px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: visible;
 }
 
 .tv-overlay-entry.is-leader {
-    background: linear-gradient(90deg, rgba(243, 198, 77, 0.18), rgba(255, 255, 255, 0.06));
-    border-color: rgba(243, 198, 77, 0.32);
+    background: linear-gradient(90deg, rgba(243, 198, 77, 0.26), rgba(255, 255, 255, 0.08));
+    border-color: rgba(243, 198, 77, 0.4);
 }
 
 .tv-overlay-entry.is-focused {
-    border-color: rgba(255, 255, 255, 0.12);
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+    border-color: rgba(255, 255, 255, 0.18);
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
 }
 
 .tv-overlay-pos {
-    font-size: 1rem;
-    font-weight: 800;
+    font-family: inherit;
+    font-size: clamp(1.1rem, 1.1vw, 1.24rem);
+    font-weight: 700;
     text-align: center;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+    line-height: 1;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
 
 .tv-overlay-delta {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 24px;
-    padding: 0 5px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--text-soft);
-    font-size: 0.72rem;
-    font-weight: 800;
+    justify-self: stretch;
+    width: 100%;
+    min-width: 0;
+    min-height: 30px;
+    padding: 0 4px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(10, 18, 29, 0.96), rgba(17, 28, 42, 0.92));
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 10px rgba(0, 0, 0, 0.2);
+    color: #eef6ff;
+    font-family: inherit;
+    font-size: 0.98rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
 }
 
 .tv-overlay-delta.is-positive {
-    color: var(--accent-green);
+    color: #c8ffe2;
+    background: linear-gradient(180deg, rgba(15, 48, 34, 0.96), rgba(10, 31, 22, 0.9));
+    border-color: rgba(84, 209, 143, 0.42);
 }
 
 .tv-overlay-delta.is-negative {
-    color: var(--accent-red);
+    color: #ffd1d1;
+    background: linear-gradient(180deg, rgba(65, 23, 23, 0.96), rgba(38, 14, 14, 0.92));
+    border-color: rgba(255, 109, 109, 0.4);
 }
 
 .tv-overlay-driver {
@@ -246,8 +308,12 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.88rem;
-    font-weight: 800;
+    font-family: inherit;
+    font-size: clamp(1.12rem, 1.1vw, 1.22rem);
+    font-weight: 700;
+    letter-spacing: 0.005em;
+    line-height: 1;
+    text-shadow: 0 1px 7px rgba(0, 0, 0, 0.48);
 }
 
 .tv-overlay-driver-meta {
@@ -255,23 +321,53 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--text-muted);
-    font-size: 0.63rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    color: rgba(230, 238, 248, 0.78);
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.035em;
 }
 
 .tv-overlay-metric {
-    font-size: 0.84rem;
-    font-weight: 800;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: clamp(1.18rem, 1.2vw, 1.34rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
     text-align: right;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.015em;
+    line-height: 1;
+    white-space: nowrap;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.58);
 }
 
 .tv-overlay-flags {
     display: flex;
     justify-content: flex-end;
+    min-width: 0;
     gap: 6px;
+}
+
+.tv-overlay-battle-badge {
+    position: absolute;
+    top: 50%;
+    right: -44px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #7fffd4, #6bc8ff);
+    color: #0f1822;
+    font-family: inherit;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
 }
 
 .tv-overlay-flag {
@@ -284,9 +380,9 @@ body {
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-soft);
-    font-size: 0.57rem;
-    font-weight: 900;
-    letter-spacing: 0.12em;
+    font-size: 0.61rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
 }
 
 .tv-overlay-flag.is-battle {
@@ -299,18 +395,258 @@ body {
     background: linear-gradient(90deg, #f3c64d, #ff8457);
 }
 
-.tv-overlay-popup-stack {
+.tv-overlay-focus-panel {
     position: absolute;
-    right: 28px;
-    bottom: 30px;
+    top: clamp(118px, 11.8vh, 160px);
+    left: 50%;
+    z-index: 4;
+    width: clamp(460px, 36vw, 780px);
+    max-width: calc(100% - 560px);
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(320px, 1.2fr);
+    grid-template-areas: "driver sectors";
+    gap: 10px 14px;
+    align-items: center;
+    overflow: hidden;
+    border-radius: 24px;
+    padding: 7px 14px 8px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera {
+    top: auto;
+    bottom: clamp(96px, 10vh, 156px);
+    width: clamp(760px, 58vw, 1160px);
+    max-width: calc(100% - 72px);
+    grid-template-columns: minmax(190px, 0.58fr) minmax(560px, 1.42fr);
+    gap: 12px 18px;
+    border-radius: 28px;
+    padding: 10px 18px 11px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-driver-row {
+    gap: 9px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-title-row {
+    gap: 12px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-position {
+    min-width: 54px;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 14px;
+    font-size: 1.02rem;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-name {
+    font-size: clamp(1.62rem, 1.78vw, 2.06rem);
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-meta-row {
+    gap: 18px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-lap {
+    font-size: 0.94rem;
+    letter-spacing: 0.09em;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-focus-best {
+    font-size: 1.08rem;
+    letter-spacing: 0.05em;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-sector-grid {
+    gap: 10px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-sector-card {
+    min-height: 78px;
+    gap: 8px;
+    padding: 10px 12px 11px;
+    border-radius: 18px;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-sector-heading {
+    font-size: 0.98rem;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-sector-reference {
+    font-size: 0.92rem;
+}
+
+.tv-overlay-focus-panel.is-tv-camera .tv-overlay-sector-value {
+    font-size: 1.62rem;
+}
+
+.tv-overlay-focus-driver-row {
+    grid-area: driver;
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.tv-overlay-focus-title-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-width: 0;
+}
+
+.tv-overlay-focus-name,
+.tv-overlay-focus-position,
+.tv-overlay-focus-lap,
+.tv-overlay-focus-best,
+.tv-overlay-sector-heading,
+.tv-overlay-sector-value,
+.tv-overlay-sector-reference {
+    margin: 0;
+}
+
+.tv-overlay-focus-position {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 42px;
+    min-height: 30px;
+    padding: 0 9px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(10, 18, 29, 0.96), rgba(17, 28, 42, 0.92));
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 10px rgba(0, 0, 0, 0.2);
+    color: #eef6ff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.tv-overlay-focus-name {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: clamp(1.12rem, 1.16vw, 1.38rem);
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+}
+
+.tv-overlay-focus-meta-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
     gap: 12px;
-    width: min(28vw, 460px);
+}
+
+.tv-overlay-focus-lap {
+    color: rgba(246, 251, 255, 0.78);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.tv-overlay-focus-best {
+    flex: 0 0 auto;
+    color: rgba(246, 251, 255, 0.94);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.tv-overlay-sector-grid {
+    grid-area: sectors;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 0;
+}
+
+.tv-overlay-sector-card {
+    min-height: 54px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 8px 7px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tv-overlay-sector-card.is-session-best {
+    background: linear-gradient(180deg, rgba(102, 43, 176, 0.34), rgba(54, 23, 90, 0.2));
+    border-color: rgba(214, 150, 255, 0.5);
+}
+
+.tv-overlay-sector-card.is-personal-best {
+    background: linear-gradient(180deg, rgba(14, 67, 45, 0.36), rgba(11, 35, 24, 0.18));
+    border-color: rgba(84, 209, 143, 0.42);
+}
+
+.tv-overlay-sector-card.is-complete {
+    background: linear-gradient(180deg, rgba(18, 28, 40, 0.56), rgba(13, 20, 31, 0.3));
+}
+
+.tv-overlay-sector-card.is-invalid {
+    background: linear-gradient(180deg, rgba(72, 30, 30, 0.4), rgba(35, 14, 14, 0.2));
+    border-color: rgba(255, 109, 109, 0.42);
+}
+
+.tv-overlay-sector-card.is-pending {
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.tv-overlay-sector-heading {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tv-overlay-sector-value {
+    font-size: 1.14rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.tv-overlay-sector-reference {
+    color: var(--text-soft);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.tv-overlay-popup-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    width: 68%;
+    min-width: 250px;
+    max-width: 292px;
 }
 
 .tv-overlay-popup {
     position: relative;
+    width: 100%;
     overflow: hidden;
     border-radius: 22px;
     padding: 16px 18px 16px 22px;
@@ -372,14 +708,34 @@ body {
 .tv-overlay-empty-state {
     padding: 20px 12px;
     color: var(--text-muted);
-    font-size: 0.84rem;
+    font-size: 0.9rem;
     text-align: center;
     letter-spacing: 0.08em;
 }
 
 @media (max-width: 1280px) {
     .tv-overlay-left-rail {
-        width: clamp(300px, 25vw, 370px);
+        width: clamp(320px, 28vw, 390px);
+    }
+
+    .tv-overlay-focus-panel {
+        width: clamp(420px, 34vw, 620px);
+        max-width: calc(100% - 500px);
+        grid-template-columns: minmax(0, 0.76fr) minmax(280px, 1.24fr);
+        gap: 8px 10px;
+        padding: 7px 11px 8px;
+    }
+
+    .tv-overlay-focus-panel.is-tv-camera {
+        width: clamp(680px, 62vw, 980px);
+        max-width: calc(100% - 48px);
+        grid-template-columns: minmax(170px, 0.54fr) minmax(470px, 1.46fr);
+        gap: 10px 14px;
+        padding: 9px 14px 10px;
+    }
+
+    .tv-overlay-side-column {
+        width: min(30vw, 380px);
     }
 
     .tv-overlay-status-card {
@@ -388,6 +744,33 @@ body {
     }
 
     .tv-overlay-popup-stack {
-        width: min(32vw, 420px);
+        width: 72%;
+        min-width: 226px;
+        max-width: 276px;
+    }
+}
+
+@media (max-width: 980px) {
+    .tv-overlay-focus-panel {
+        width: min(56vw, 540px);
+        max-width: calc(100% - 460px);
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "driver"
+            "sectors";
+        gap: 7px;
+    }
+
+    .tv-overlay-focus-panel.is-tv-camera {
+        width: min(80vw, 760px);
+        max-width: calc(100% - 28px);
+        grid-template-columns: minmax(0, 0.52fr) minmax(0, 1.48fr);
+        grid-template-areas: "driver sectors";
+        gap: 8px 10px;
+        padding: 8px 10px 9px;
+    }
+
+    .tv-overlay-sector-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }

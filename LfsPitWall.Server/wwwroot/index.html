@@ -85,11 +85,11 @@
                     <div class="session-time-card">
                         <div class="session-time-primary">
                             <p class="text-2xl font-mono font-bold text-yellow-300" id="session-duration">00:00:00</p>
-                            <p class="text-xs text-gray-500 mt-2" id="session-estimated-remaining">Est. remaining: -</p>
+                            <p class="session-time-supporting-label" id="session-estimated-remaining">Est. remaining: -</p>
                         </div>
                         <div class="session-time-progress">
-                            <p class="session-time-progress-label">Session Progress</p>
                             <p class="session-time-progress-value" id="max-laps">0</p>
+                            <p class="session-time-progress-label">Session Progress</p>
                         </div>
                     </div>
                 </div>
@@ -124,6 +124,7 @@
                     <div class="standings-view-toggle" role="tablist" aria-label="Standings view toggle">
                         <button type="button" class="standings-view-button is-active" id="standings-view-table" data-standings-view="table" aria-pressed="true">Table</button>
                         <button type="button" class="standings-view-button" id="standings-view-map" data-standings-view="map" aria-pressed="false">Map</button>
+                        <button type="button" class="standings-view-button" id="standings-view-charts" data-standings-view="charts" aria-pressed="false">Chart</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto" id="standings-table-view">
@@ -131,14 +132,14 @@
                         <thead class="border-b border-gray-700">
                             <tr class="text-left text-sm text-gray-400">
                                 <th class="px-4 py-3">Pos</th>
-                                <th class="px-4 py-3">Driver</th>
+                                <th class="px-4 py-3 standings-column--driver">Driver</th>
                                 <th class="px-4 py-3">Car</th>
-                                <th class="px-4 py-3">Laps</th>
+                                <th class="px-3 py-3 standings-column--laps">Laps</th>
                                 <th class="px-4 py-3">Last Lap</th>
                                 <th class="px-4 py-3">Gap</th>
+                                <th class="px-4 py-3 standings-column--sectors">Sectors</th>
                                 <th class="px-4 py-3">Best Lap</th>
-                                <th class="px-4 py-3">Sectors</th>
-                                <th class="px-4 py-3">Top Speed</th>
+                                <th class="px-4 py-3 standings-column--top-speed">Top Speed</th>
                                 <th class="px-4 py-3">Tyres</th>
                                 <th class="px-4 py-3">Pits</th>
                             </tr>
@@ -182,6 +183,36 @@
                         </aside>
                     </div>
                 </div>
+                <div class="standings-chart-view" id="standings-chart-view" hidden>
+                    <div class="standings-chart-shell">
+                        <div class="standings-chart-toolbar">
+                            <div>
+                                <p class="standings-chart-title">Lap Time Comparison</p>
+                                <p class="standings-chart-subtitle" id="standings-chart-subtitle">Select drivers in the table or below the chart to compare lap pace and adjust the vertical time scale.</p>
+                            </div>
+                            <div class="standings-chart-controls" id="standings-chart-controls" hidden>
+                                <button type="button" class="standings-chart-reset" id="standings-chart-zoom-in">Scale +</button>
+                                <button type="button" class="standings-chart-reset" id="standings-chart-zoom-out">Scale -</button>
+                                <button type="button" class="standings-chart-reset" id="standings-chart-reset">Reset</button>
+                            </div>
+                        </div>
+                        <div class="standings-chart-stage">
+                            <canvas id="standings-chart-canvas" class="standings-chart-canvas" aria-label="Lap time comparison chart" hidden></canvas>
+                            <div class="standings-chart-empty" id="standings-chart-empty">Select one or more drivers from the table, map, or picker below to render lap-time trends.</div>
+                            <div class="standings-chart-loading" id="standings-chart-loading" hidden>Loading chart data...</div>
+                        </div>
+                        <div class="standings-chart-driver-picker-panel" aria-label="Chart driver legend and selection">
+                            <div class="standings-chart-driver-picker-header">
+                                <p class="standings-chart-driver-picker-title">Driver Legend &amp; Selection</p>
+                                <p class="standings-chart-driver-picker-copy">Click to add or remove drivers. Selection is shared with Table and Map.</p>
+                            </div>
+                            <div class="standings-chart-driver-picker" id="standings-chart-driver-picker">
+                                <div class="standings-chart-driver-picker-empty">Waiting for drivers...</div>
+                            </div>
+                        </div>
+                        <p class="standings-chart-hint" id="standings-chart-hint">Use the mouse wheel over the chart or `Scale +` / `Scale -` to change the vertical lap-time scale. Click and drag the chart to move the scaled view up or down. Driver selection below is shared with Table and Map.</p>
+                    </div>
+                </div>
             </div>
 
             <!-- LFS Chat -->
@@ -218,6 +249,7 @@
                         <p class="app-footer-text app-footer-meta">
                             <span id="app-project-type">ASP.NET Core web app with an HTML/JavaScript frontend.</span>
                         </p>
+                        <p class="app-footer-text app-footer-note">Built with AI assistance.</p>
                     </div>
                     <div>
                         <p class="app-footer-title">Project</p>

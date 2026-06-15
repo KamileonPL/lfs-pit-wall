@@ -1,3 +1,4 @@
+using System.Linq;
 using LfsPitWall.Server.Models.Archive;
 
 namespace LfsPitWall.Server.Models;
@@ -59,9 +60,15 @@ public class TimingPointSnapshot
 /// </summary>
 public class TrackMapNodeSample
 {
-    private const int MaxStoredSamples = 41;
+    private const int MaxStoredSamples = 81;
+    private const double EarlySampleSmoothingFactor = 0.34;
+    private const double MidSampleSmoothingFactor = 0.18;
+    private const double SettledSampleSmoothingFactor = 0.08;
     public const uint DeferredSortOrder = uint.MaxValue;
     private readonly List<TrackMapRawSample> _samples = new();
+    private double _stabilizedX;
+    private double _stabilizedY;
+    private bool _hasStabilizedPoint;
 
     public ushort Node { get; set; }
     public uint SampleCount { get; private set; }
@@ -77,6 +84,25 @@ public class TrackMapNodeSample
         }
 
         _samples.Add(new TrackMapRawSample(x, y));
+
+        var representativePoint = BuildRepresentativePoint();
+        if (!_hasStabilizedPoint)
+        {
+            _stabilizedX = representativePoint.X;
+            _stabilizedY = representativePoint.Y;
+            _hasStabilizedPoint = true;
+            return;
+        }
+
+        var smoothingFactor = SampleCount switch
+        {
+            < 8 => EarlySampleSmoothingFactor,
+            < 20 => MidSampleSmoothingFactor,
+            _ => SettledSampleSmoothingFactor
+        };
+
+        _stabilizedX += (representativePoint.X - _stabilizedX) * smoothingFactor;
+        _stabilizedY += (representativePoint.Y - _stabilizedY) * smoothingFactor;
     }
 
     public TrackMapPoint ToPoint()
@@ -86,17 +112,64 @@ public class TrackMapNodeSample
             return new TrackMapPoint { Node = Node };
         }
 
-        var orderedX = _samples.Select(sample => sample.X).OrderBy(value => value).ToList();
-        var orderedY = _samples.Select(sample => sample.Y).OrderBy(value => value).ToList();
-        var medianX = orderedX[orderedX.Count / 2];
-        var medianY = orderedY[orderedY.Count / 2];
+        if (_hasStabilizedPoint)
+        {
+            return new TrackMapPoint
+            {
+                Node = Node,
+                X = (int)Math.Round(_stabilizedX),
+                Y = (int)Math.Round(_stabilizedY)
+            };
+        }
+
+        var representativePoint = BuildRepresentativePoint();
 
         return new TrackMapPoint
         {
             Node = Node,
-            X = medianX,
-            Y = medianY
+            X = representativePoint.X,
+            Y = representativePoint.Y
         };
+    }
+
+    private TrackMapPoint BuildRepresentativePoint()
+    {
+        var orderedX = _samples.Select(sample => sample.X).OrderBy(value => value).ToList();
+        var orderedY = _samples.Select(sample => sample.Y).OrderBy(value => value).ToList();
+        var representativeX = BuildRepresentativeCoordinate(orderedX);
+        var representativeY = BuildRepresentativeCoordinate(orderedY);
+
+        return new TrackMapPoint
+        {
+            Node = Node,
+            X = representativeX,
+            Y = representativeY
+        };
+    }
+
+    private static int BuildRepresentativeCoordinate(IReadOnlyList<int> orderedValues)
+    {
+        if (orderedValues.Count == 0)
+        {
+            return 0;
+        }
+
+        var trimCount = orderedValues.Count >= 10 ? Math.Max(1, orderedValues.Count / 5) : 0;
+        var startIndex = trimCount;
+        var endIndex = orderedValues.Count - trimCount;
+
+        if (endIndex <= startIndex)
+        {
+            return orderedValues[orderedValues.Count / 2];
+        }
+
+        long sum = 0;
+        for (var index = startIndex; index < endIndex; index++)
+        {
+            sum += orderedValues[index];
+        }
+
+        return (int)Math.Round(sum / (double)(endIndex - startIndex));
     }
 
     private readonly record struct TrackMapRawSample(int X, int Y);
@@ -526,6 +599,43 @@ public class Driver
         CurrentHeading = heading;
         LastLiveTelemetryAtUtc = DateTime.UtcNow;
         UpdateTopSpeed(rawSpeed);
+    }
+
+    /// <summary>
+    /// Apply a telemetry snapshot copied from another driver instance.
+    /// Preserves the original telemetry timestamp and top speed value.
+    /// </summary>
+    public void ApplyTelemetrySnapshot(bool hasWorldPosition, int worldX, int worldY, ushort heading, double topSpeedKmh, DateTime? lastLiveTelemetryAtUtc)
+    {
+        HasWorldPosition = hasWorldPosition;
+        WorldX = worldX;
+        WorldY = worldY;
+        CurrentHeading = heading;
+        LastLiveTelemetryAtUtc = lastLiveTelemetryAtUtc;
+        if (topSpeedKmh > TopSpeedKmh)
+        {
+            TopSpeedKmh = topSpeedKmh;
+        }
+    }
+
+    /// <summary>
+    /// Reset live lap/sector progress for a driver rejoining during a race after spectating.
+    /// Preserves archived lap history but clears in-progress lap state.
+    /// </summary>
+    public void ResetLiveProgressForRaceRejoin()
+    {
+        CurrentLapSectors.Clear();
+        CurrentLapSplitTimes.Clear();
+        TimingPointElapsedTimes.Clear();
+        LastTimingPoint = null;
+        CurrentTrackLap = 0;
+        CurrentTrackNode = 0;
+        CurrentRacePosition = 0;
+        LapsCompleted = 0;
+        HasWorldPosition = false;
+        LastLiveTelemetryAtUtc = null;
+        IsInPitLane = false;
+        IsPitStopActive = false;
     }
 
     public bool HasFreshWorldPosition(DateTime snapshotTimeUtc, TimeSpan maxTelemetryAge)
@@ -1151,6 +1261,16 @@ public class RaceSession
     public byte QualifyingMins { get; set; }
 
     /// <summary>
+    /// Last in-game camera mode reported by IS_STA.
+    /// </summary>
+    public byte InGameCamera { get; private set; }
+
+    /// <summary>
+    /// Player ID currently being viewed by the local camera, if any.
+    /// </summary>
+    public byte? ViewedPlayerId { get; private set; }
+
+    /// <summary>
     /// Session best lap cached for fast reads.
     /// </summary>
     public LapData? SessionBestLap { get; private set; }
@@ -1231,6 +1351,23 @@ public class RaceSession
             }
 
             return result;
+        }
+    }
+
+    public void UpdateViewedDriver(byte viewedPlayerId, byte inGameCamera)
+    {
+        lock (_playersLock)
+        {
+            InGameCamera = inGameCamera;
+            ViewedPlayerId = viewedPlayerId == 0 ? null : viewedPlayerId;
+        }
+    }
+
+    public (byte? ViewedPlayerId, byte InGameCamera) GetViewedDriverState()
+    {
+        lock (_playersLock)
+        {
+            return (ViewedPlayerId, InGameCamera);
         }
     }
 
@@ -1350,6 +1487,38 @@ public class RaceSession
         }
     }
 
+    private Driver? GetDriverByUsername(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return null;
+        }
+
+        var normalized = username.Trim();
+        return Players.Values.FirstOrDefault(d =>
+            !string.IsNullOrWhiteSpace(d.Username) &&
+            string.Equals(d.Username.Trim(), normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void CopyDriverFields(Driver target, Driver source)
+    {
+        target.Name = source.Name;
+        target.NameHtml = source.NameHtml;
+        target.CarName = source.CarName;
+        target.SkinName = source.SkinName;
+        target.Username = source.Username;
+        target.ConnectionId = source.ConnectionId;
+        target.TyreTypes = source.TyreTypes.ToArray();
+        target.FuelPercent = source.FuelPercent;
+        target.DriverColor = source.DriverColor;
+        target.CurrentRacePosition = source.CurrentRacePosition;
+        target.CurrentTrackLap = source.CurrentTrackLap;
+        target.CurrentTrackNode = source.CurrentTrackNode;
+        // Apply telemetry snapshot to preserve original timestamp and top-speed value.
+        target.ApplyTelemetrySnapshot(source.HasWorldPosition, source.WorldX, source.WorldY,
+            source.CurrentHeading, source.TopSpeedKmh, source.LastLiveTelemetryAtUtc);
+    }
+
     /// <summary>
     /// Adds or updates a driver (THREAD-SAFE)
     /// </summary>
@@ -1357,8 +1526,31 @@ public class RaceSession
     {
         lock (_playersLock)
         {
-            MergeDepartedDriverInto(driver);
-            Players[driver.PlayerId] = driver;
+            // If driver is known by username with different PLID, merge progress into canonical object.
+            var existingByUsername = GetDriverByUsername(driver.Username);
+            if (existingByUsername != null && existingByUsername.PlayerId != driver.PlayerId)
+            {
+                // keep existing history and metrics, update live fields from incoming driver
+                CopyDriverFields(existingByUsername, driver);
+
+                // If this is a race session and the player is rejoining after spectating,
+                // clear transient live progress (laps/sectors) so the driver starts fresh.
+                if (SessionType == 2)
+                {
+                    existingByUsername.ResetLiveProgressForRaceRejoin();
+                }
+
+                // move dictionary key from old plid to new plid
+                Players.Remove(existingByUsername.PlayerId);
+                existingByUsername.PlayerId = driver.PlayerId;
+                Players[driver.PlayerId] = existingByUsername;
+                driver = existingByUsername;
+            }
+            else
+            {
+                MergeDepartedDriverInto(driver);
+                Players[driver.PlayerId] = driver;
+            }
 
             if (TryGetOfficialResultEntry(driver.PlayerId, driver.Username, out var officialResultEntry))
             {
@@ -1716,6 +1908,8 @@ public class RaceSession
             ActiveSectorCount = 0;
             MaxRaceLaps = 0;
             QualifyingMins = 0;
+            InGameCamera = 0;
+            ViewedPlayerId = null;
             SessionBestLap = null;
             SessionBestLapAuthorPLID = null;
             SessionBestLapNumber = null;

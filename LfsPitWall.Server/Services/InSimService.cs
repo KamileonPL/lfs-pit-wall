@@ -37,6 +37,7 @@ public class InSimService : BackgroundService
     private InSimConnection? _connection;
     private PeriodicTimer? _keepAliveTimer;
     private bool _useObservedSpatialTrackMapFallback;
+    private bool _hasObservedAutocrossLayout;
     private int _collapsedNodeTraceCount;
     private byte? _referenceTrackMapPlayerId;
     private DateTime _lastOfficialResultsRequestUtc = DateTime.MinValue;
@@ -505,17 +506,9 @@ public class InSimService : BackgroundService
 
     private bool ShouldUseSpatialTrackMapKeying()
     {
-        if (_useObservedSpatialTrackMapFallback)
-        {
-            return true;
-        }
-
-        if (_raceSession.ActiveSectorCount == 0)
-        {
-            return true;
-        }
-
-        return false;
+        return _useObservedSpatialTrackMapFallback
+            || _raceSession.ActiveSectorCount == 0
+            || _hasObservedAutocrossLayout;
     }
 
     private static int BuildCustomTrackMapKey(int x, int y)
@@ -528,15 +521,12 @@ public class InSimService : BackgroundService
 
     private bool ShouldUseRelaxedTrackMapSampling()
     {
-        if (_raceSession.ActiveSectorCount == 0)
-        {
-            return true;
-        }
-
-        return IsLayoutCapableTrack(_raceSession.TrackName);
+        return _raceSession.ActiveSectorCount == 0
+            || _hasObservedAutocrossLayout
+            || IsLikelyCustomLayoutTrack(_raceSession.TrackName);
     }
 
-    private static bool IsLayoutCapableTrack(string trackName)
+    private static bool IsLikelyCustomLayoutTrack(string trackName)
     {
         if (string.IsNullOrWhiteSpace(trackName))
         {
@@ -552,7 +542,7 @@ public class InSimService : BackgroundService
     {
         try
         {
-            if (_connection?.IsConnected != true || !IsLayoutCapableTrack(_raceSession.TrackName))
+            if (_connection?.IsConnected != true)
             {
                 return;
             }
@@ -581,7 +571,7 @@ public class InSimService : BackgroundService
             return false;
         }
 
-        if (!IsLayoutCapableTrack(_raceSession.TrackName))
+        if (!_hasObservedAutocrossLayout && !IsLikelyCustomLayoutTrack(_raceSession.TrackName))
         {
             _collapsedNodeTraceCount = 0;
             return false;
@@ -606,10 +596,8 @@ public class InSimService : BackgroundService
         var trackName = System.Text.Encoding.ASCII.GetString(packet.Track).TrimEnd('\0').Trim();
         if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, trackName, StringComparison.OrdinalIgnoreCase))
         {
-            _useObservedSpatialTrackMapFallback = false;
-            _collapsedNodeTraceCount = 0;
-            _referenceTrackMapPlayerId = null;
-            _raceSession.ClearTrackMap();
+            _hasObservedAutocrossLayout = false;
+            ResetTrackMapObservationState();
         }
 
         if (!string.IsNullOrEmpty(trackName))
@@ -617,10 +605,7 @@ public class InSimService : BackgroundService
         else
             _raceSession.SetTrackIdentity("Unknown");
 
-        if (IsLayoutCapableTrack(_raceSession.TrackName))
-        {
-            _ = RequestAutocrossInfoAsync("session-state");
-        }
+        _ = RequestAutocrossInfoAsync("session-state");
 
         _raceSession.WeatherType = packet.Weather;
         _raceSession.WindType = packet.Wind;
@@ -628,6 +613,7 @@ public class InSimService : BackgroundService
         
         // Store qualifying minutes from IS_STA
         _raceSession.QualifyingMins = packet.QualMins;
+        _raceSession.UpdateViewedDriver(packet.ViewPLID, packet.InGameCam);
 
         // Determine session type from packet.RaceInProg: 0=no race, 1=race, 2=qualifying
         // We map to: 0=practice/idle, 1=qualifying, 2=race
@@ -1048,6 +1034,8 @@ public class InSimService : BackgroundService
 
         if (packet.SubT == (byte)TinyPacketType.TINY_AXC)
         {
+            _hasObservedAutocrossLayout = false;
+            ResetTrackMapObservationState();
             _raceSession.SetTrackIdentity(_raceSession.TrackName);
         }
     }
@@ -1160,10 +1148,8 @@ public class InSimService : BackgroundService
 
         if (!string.IsNullOrEmpty(trackName) && !string.Equals(_raceSession.TrackName, normalizedTrackName, StringComparison.OrdinalIgnoreCase))
         {
-            _useObservedSpatialTrackMapFallback = false;
-            _collapsedNodeTraceCount = 0;
-            _referenceTrackMapPlayerId = null;
-            _raceSession.ClearTrackMap();
+            _hasObservedAutocrossLayout = false;
+            ResetTrackMapObservationState();
         }
 
         _raceSession.SetTrackIdentity(normalizedTrackName);
@@ -1172,10 +1158,7 @@ public class InSimService : BackgroundService
         _raceSession.SessionType = packet.RaceLaps == 0 ? (byte)1 : (byte)2;
         _raceSession.RaceInProgress = packet.RaceLaps > 0;
 
-        if (IsLayoutCapableTrack(_raceSession.TrackName))
-        {
-            _ = RequestAutocrossInfoAsync("race-start");
-        }
+        _ = RequestAutocrossInfoAsync("race-start");
         
         // Store race parameters from IS_RST packet
         _raceSession.MaxRaceLaps = packet.RaceLaps;
@@ -1207,6 +1190,26 @@ public class InSimService : BackgroundService
     private void HandleAutocrossInfo(IS_AXI packet)
     {
         var layoutName = packet.GetLayoutName();
+        var hasAutocrossLayout = packet.NumO > 0 || packet.NumCP > 0 || packet.AXStart > 0 || !string.IsNullOrWhiteSpace(layoutName);
+        var layoutStateChanged = hasAutocrossLayout != _hasObservedAutocrossLayout;
+
+        _hasObservedAutocrossLayout = hasAutocrossLayout;
+
+        if (layoutStateChanged)
+        {
+            ResetTrackMapObservationState();
+
+            if (hasAutocrossLayout)
+            {
+                _logger.LogInformation(
+                    "🗺️ Track map switched to spatial sampling via AXI | Track: {Track} | Layout: {LayoutName} | Objects: {ObjectCount} | Checkpoints: {CheckpointCount}",
+                    _raceSession.TrackName,
+                    string.IsNullOrWhiteSpace(layoutName) ? "-" : layoutName,
+                    packet.NumO,
+                    packet.NumCP);
+            }
+        }
+
         _raceSession.SetTrackIdentity(_raceSession.TrackName, layoutName);
 
         _logger.LogInformation(
@@ -1215,6 +1218,14 @@ public class InSimService : BackgroundService
             string.IsNullOrWhiteSpace(layoutName) ? "-" : layoutName,
             packet.NumO,
             packet.NumCP);
+    }
+
+    private void ResetTrackMapObservationState()
+    {
+        _useObservedSpatialTrackMapFallback = false;
+        _collapsedNodeTraceCount = 0;
+        _referenceTrackMapPlayerId = null;
+        _raceSession.ClearTrackMap();
     }
 
     // ── Connection Cleanup ──────────────────────────────

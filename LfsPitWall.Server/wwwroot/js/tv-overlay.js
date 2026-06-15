@@ -7,6 +7,12 @@ const overlayElements = {
     rotationLabel: document.getElementById("overlay-rotation-label"),
     windowLabel: document.getElementById("overlay-window-label"),
     standingsList: document.getElementById("overlay-standings-list"),
+    focusPanel: document.getElementById("overlay-focus-panel"),
+    focusPosition: document.getElementById("overlay-focus-position"),
+    focusLap: document.getElementById("overlay-focus-lap"),
+    focusName: document.getElementById("overlay-focus-name"),
+    focusBest: document.getElementById("overlay-focus-best"),
+    sectorGrid: document.getElementById("overlay-sector-grid"),
     popupStack: document.getElementById("overlay-popup-stack"),
     connectionState: document.getElementById("overlay-connection-state")
 };
@@ -54,13 +60,14 @@ function renderStandings(entries) {
                 </div>`);
         }
 
-        const flags = [];
-        if (entry.isBattling) {
-            flags.push('<span class="tv-overlay-flag is-battle">FIGHT</span>');
-        }
+        const pitFlags = [];
         if (entry.isInPit) {
-            flags.push('<span class="tv-overlay-flag is-pit">PIT</span>');
+            pitFlags.push('<span class="tv-overlay-flag is-pit">PIT</span>');
         }
+
+        const battleBadge = entry.isBattling
+            ? '<span class="tv-overlay-battle-badge">FIGHT</span>'
+            : "";
 
         const deltaClass = entry.deltaText.startsWith("+")
             ? "is-positive"
@@ -77,7 +84,8 @@ function renderStandings(entries) {
                     <div class="tv-overlay-driver-meta">${escapeHtml(entry.metaText)}</div>
                 </div>
                 <div class="tv-overlay-metric">${escapeHtml(entry.metricText)}</div>
-                <div class="tv-overlay-flags">${flags.join("")}</div>
+                <div class="tv-overlay-flags">${pitFlags.join("")}</div>
+                ${battleBadge}
             </article>`);
     });
 
@@ -97,6 +105,31 @@ function renderPopups(popups) {
         </article>`).join("");
 }
 
+function renderViewedDriver(viewedDriver) {
+    if (!overlayElements.focusPanel || !overlayElements.focusPosition || !overlayElements.focusLap || !overlayElements.focusName || !overlayElements.focusBest || !overlayElements.sectorGrid) {
+        return;
+    }
+
+    if (!viewedDriver?.sectors?.length) {
+        overlayElements.focusPanel.hidden = true;
+        overlayElements.focusPanel.classList.remove("is-tv-camera");
+        overlayElements.sectorGrid.innerHTML = "";
+        return;
+    }
+
+    overlayElements.focusPanel.hidden = false;
+    overlayElements.focusPanel.classList.toggle("is-tv-camera", !!viewedDriver.isTvCamera);
+    overlayElements.focusPosition.textContent = viewedDriver.positionText || "P-";
+    overlayElements.focusLap.textContent = viewedDriver.currentLapText || "LAP -";
+    overlayElements.focusName.innerHTML = viewedDriver.nameHtml || "-";
+    overlayElements.focusBest.textContent = `BEST ${viewedDriver.bestLapText || "-"}`;
+    overlayElements.sectorGrid.innerHTML = viewedDriver.sectors.map((sector) => `
+        <article class="tv-overlay-sector-card is-${escapeHtml(sector.accentClass || "pending")}">
+            <p class="tv-overlay-sector-heading">S${Number(sector.sectorNumber || 0)}${sector.referenceText ? ` <span class="tv-overlay-sector-reference">(${escapeHtml(sector.referenceText)})</span>` : ""}</p>
+            <p class="tv-overlay-sector-value">${escapeHtml(sector.currentText || "--.---")}</p>
+        </article>`).join("");
+}
+
 function renderOverlay(snapshot) {
     if (!snapshot) {
         return;
@@ -109,6 +142,7 @@ function renderOverlay(snapshot) {
     overlayElements.progressBar.style.width = `${Math.max(0, Math.min(100, Number(snapshot.progressRatio || 0) * 100))}%`;
     overlayElements.rotationLabel.textContent = snapshot.rotationLabel || "INTERVAL";
     overlayElements.windowLabel.textContent = snapshot.standingsWindowLabel || "FULL FIELD";
+    renderViewedDriver(snapshot.viewedDriver);
     renderStandings(snapshot.entries);
     renderPopups(snapshot.popups);
 }

@@ -29,14 +29,39 @@ let sessionClockLastServerMs = 0;
 let sessionClockRunning = false;
 let lastRenderedChatRevision = null;
 let standingsViewMode = "table";
+let signalRScriptLoadPromise = null;
+let signalRConnectionInitialized = false;
+let standingsChartLibraryLoadPromise = null;
+let standingsChartInstance = null;
+let standingsChartRenderToken = 0;
+let standingsChartYZoomStep = 0;
+let standingsChartYPanOffsetMs = 0;
+let standingsChartDragState = null;
 const selectedDriverIds = new Set();
 const driverLapHistoryCache = new Map();
 const driverProfileCache = new Map();
+const gapTrendStateByDriverId = new Map();
+const driverTableRowMarkupCache = new Map();
 const LAP_HISTORY_SHOW_DELAY_MS = 240;
 const LAP_HISTORY_HIDE_DELAY_MS = 80;
 const DRIVER_PROFILE_HIDE_DELAY_MS = 180;
 const DRIVER_PROFILE_RETRY_DELAY_MS = 6500;
 const DRIVER_PROFILE_TOOLTIP_GAP_PX = 8;
+const GAP_TREND_DEADBAND_MS = 50;
+const STANDINGS_CHART_FALLBACK_PALETTE = [
+    "#ef4444",
+    "#3b82f6",
+    "#f59e0b",
+    "#10b981",
+    "#8b5cf6",
+    "#ec4899",
+    "#06b6d4",
+    "#84cc16",
+    "#f97316",
+    "#6366f1",
+    "#14b8a6",
+    "#eab308"
+];
 const PUBSTAT_TRACK_PREFIXES = {
     0: "BL",
     1: "SO",
@@ -331,6 +356,15 @@ function formatDistanceMeters(distanceMeters) {
     return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(numericValue / 1000)} km`;
 }
 
+function formatRatioScore(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return "-";
+    }
+
+    return formatCompactNumber(Math.round(numericValue * 100));
+}
+
 function formatRelativeTimestamp(value) {
     if (!value) {
         return "unknown";
@@ -379,6 +413,61 @@ function formatDriverProfileLastCombo(trackCode, carCode) {
     const formattedTrack = formatPubstatTrackCode(trackCode) || "-";
     const formattedCar = String(carCode || "").trim();
     return formattedCar ? `${formattedTrack} ${formattedCar}` : formattedTrack;
+}
+
+function getDriverProfileRacecraftScore(stats) {
+    if (!stats) {
+        return null;
+    }
+
+    const finishes = Math.max(0, Number(stats.finishes || 0));
+    const wins = Math.max(0, Number(stats.wins || 0));
+    const secondPlaces = Math.max(0, Number(stats.secondPlaces || 0));
+    const thirdPlaces = Math.max(0, Number(stats.thirdPlaces || 0));
+    const qualifyingSessions = Math.max(0, Number(stats.qualifyingSessions || 0));
+    const polePositions = Math.max(0, Number(stats.polePositions || 0));
+    const nonPodiumFinishes = Math.max(0, finishes - wins - secondPlaces - thirdPlaces);
+
+    if (finishes === 0 && qualifyingSessions === 0) {
+        return null;
+    }
+
+    const weightedFinishPoints = wins
+        + (0.65 * secondPlaces)
+        + (0.45 * thirdPlaces)
+        + (0.05 * nonPodiumFinishes);
+    const resultPriorMean = 0.32;
+    const resultPriorStrength = 240;
+    const polePriorMean = 0.12;
+    const polePriorStrength = 60;
+    const resultQuality = finishes > 0
+        ? (weightedFinishPoints + (resultPriorMean * resultPriorStrength)) / (finishes + resultPriorStrength)
+        : resultPriorMean;
+    const poleQuality = qualifyingSessions > 0
+        ? (polePositions + (polePriorMean * polePriorStrength)) / (qualifyingSessions + polePriorStrength)
+        : polePriorMean;
+    const evidence = finishes + (0.35 * qualifyingSessions);
+    const confidence = Math.sqrt(evidence / (evidence + 500));
+    const compositeScore = (0.7 * resultQuality)
+        + (0.2 * poleQuality)
+        + (0.1 * confidence);
+    const score = Math.round(28 + (90 * compositeScore));
+
+    return Math.max(1, Math.min(99, score));
+}
+
+function getDriverProfileTenacity(stats) {
+    if (!stats) {
+        return null;
+    }
+
+    const finishes = Math.max(0, Number(stats.finishes || 0));
+    const hostsJoined = Math.max(0, Number(stats.hostsJoined || 0));
+    if (hostsJoined === 0) {
+        return null;
+    }
+
+    return finishes / hostsJoined;
 }
 
 function escapeHtml(value) {
@@ -753,6 +842,7 @@ function refreshDriverHoverState() {
     });
 
     window.TrackMapController?.setHoveredDriverId(hoveredDriverId);
+    refreshStandingsChartDriverPickerInteractionState();
 }
 
 function getOrCreateDriverProfileTooltip() {
@@ -843,6 +933,8 @@ function renderDriverProfileTooltip(driver, profile) {
     }
 
     const stats = profile.stats || {};
+    const racecraftScore = getDriverProfileRacecraftScore(stats);
+    const tenacity = getDriverProfileTenacity(stats);
     const hostNameHtml = profile.currentOrLastHostNameHtml || convertLfsTextToHtml(stats.currentOrLastHostName || "") || "-";
     const refreshedText = profile.lastSuccessAtUtc
         ? `Refreshed ${formatRelativeTimestamp(profile.lastSuccessAtUtc)}`
@@ -857,6 +949,14 @@ function renderDriverProfileTooltip(driver, profile) {
             ${countryLine}
         </div>
         <div class="driver-profile-tooltip-grid">
+            <div class="driver-profile-stat-card is-accent">
+                <span class="driver-profile-stat-label">Racecraft</span>
+                <span class="driver-profile-stat-value">${racecraftScore == null ? "-" : formatCompactNumber(racecraftScore)}</span>
+            </div>
+            <div class="driver-profile-stat-card is-accent">
+                <span class="driver-profile-stat-label">Finish Rate</span>
+                <span class="driver-profile-stat-value">${tenacity == null ? "-" : formatRatioScore(tenacity)}</span>
+            </div>
             <div class="driver-profile-stat-card">
                 <span class="driver-profile-stat-label">Wins</span>
                 <span class="driver-profile-stat-value">${formatCompactNumber(stats.wins)}</span>
@@ -1005,6 +1105,7 @@ function refreshSelectedDriverState() {
     });
 
     window.TrackMapController?.refreshSelection();
+    renderStandingsChartDriverPicker();
 }
 
 function toggleSelectedDriverId(driverId) {
@@ -1020,6 +1121,10 @@ function toggleSelectedDriverId(driverId) {
     }
 
     refreshSelectedDriverState();
+
+    if (standingsViewMode === "charts") {
+        renderStandingsChartView();
+    }
 }
 
 function pruneSelectedDriverIds(activeDriverIds) {
@@ -1033,15 +1138,25 @@ function pruneSelectedDriverIds(activeDriverIds) {
 
     if (changed) {
         refreshSelectedDriverState();
+
+        if (standingsViewMode === "charts") {
+            renderStandingsChartView();
+        }
     }
 }
 
 function setStandingsViewMode(mode) {
-    standingsViewMode = mode === "map" ? "map" : "table";
+    standingsViewMode = mode === "map"
+        ? "map"
+        : mode === "charts"
+            ? "charts"
+            : "table";
 
     const tableView = document.getElementById("standings-table-view");
     const mapView = document.getElementById("standings-map-view");
+    const chartView = document.getElementById("standings-chart-view");
     const tableButton = document.getElementById("standings-view-table");
+    const chartButton = document.getElementById("standings-view-charts");
     const mapButton = document.getElementById("standings-view-map");
 
     if (tableView) {
@@ -1052,9 +1167,18 @@ function setStandingsViewMode(mode) {
         mapView.hidden = standingsViewMode !== "map";
     }
 
+    if (chartView) {
+        chartView.hidden = standingsViewMode !== "charts";
+    }
+
     if (tableButton) {
         tableButton.classList.toggle("is-active", standingsViewMode === "table");
         tableButton.setAttribute("aria-pressed", standingsViewMode === "table" ? "true" : "false");
+    }
+
+    if (chartButton) {
+        chartButton.classList.toggle("is-active", standingsViewMode === "charts");
+        chartButton.setAttribute("aria-pressed", standingsViewMode === "charts" ? "true" : "false");
     }
 
     if (mapButton) {
@@ -1063,6 +1187,20 @@ function setStandingsViewMode(mode) {
     }
 
     window.TrackMapController?.setViewActive(standingsViewMode === "map");
+
+    if (standingsViewMode !== "charts") {
+        hideStandingsChartTooltip();
+        standingsChartDragState = null;
+        updateStandingsChartCanvasInteractionState();
+    }
+
+    if (standingsViewMode === "charts") {
+        renderStandingsChartDriverPicker();
+        window.requestAnimationFrame(() => {
+            standingsChartInstance?.resize?.();
+            renderStandingsChartView();
+        });
+    }
 }
 
 function initializeStandingsViewToggle() {
@@ -1078,6 +1216,880 @@ function initializeStandingsViewToggle() {
     });
 
     setStandingsViewMode(standingsViewMode);
+}
+
+function initializeStandingsChartControls() {
+    const resetButton = document.getElementById("standings-chart-reset");
+    const zoomInButton = document.getElementById("standings-chart-zoom-in");
+    const zoomOutButton = document.getElementById("standings-chart-zoom-out");
+    const canvas = document.getElementById("standings-chart-canvas");
+    if (resetButton && resetButton.dataset.chartResetBound !== "true") {
+        resetButton.dataset.chartResetBound = "true";
+        resetButton.addEventListener("click", () => {
+            standingsChartYZoomStep = 0;
+            standingsChartYPanOffsetMs = 0;
+            updateStandingsChartScaleControls();
+            applyStandingsChartScaleStateToInstance();
+        });
+    }
+
+    if (zoomInButton && zoomInButton.dataset.chartZoomInBound !== "true") {
+        zoomInButton.dataset.chartZoomInBound = "true";
+        zoomInButton.addEventListener("click", () => {
+            adjustStandingsChartYZoomStep(1);
+        });
+    }
+
+    if (zoomOutButton && zoomOutButton.dataset.chartZoomOutBound !== "true") {
+        zoomOutButton.dataset.chartZoomOutBound = "true";
+        zoomOutButton.addEventListener("click", () => {
+            adjustStandingsChartYZoomStep(-1);
+        });
+    }
+
+    if (canvas && canvas.dataset.chartCanvasBound !== "true") {
+        canvas.dataset.chartCanvasBound = "true";
+        canvas.addEventListener("wheel", handleStandingsChartWheel, { passive: false });
+        canvas.addEventListener("pointerdown", handleStandingsChartPointerDown);
+        canvas.addEventListener("pointermove", handleStandingsChartPointerMove);
+        canvas.addEventListener("pointerup", finishStandingsChartPointerInteraction);
+        canvas.addEventListener("pointercancel", finishStandingsChartPointerInteraction);
+        canvas.addEventListener("lostpointercapture", finishStandingsChartPointerInteraction);
+    }
+
+    const driverPicker = document.getElementById("standings-chart-driver-picker");
+    if (driverPicker && driverPicker.dataset.chartPickerBound !== "true") {
+        driverPicker.dataset.chartPickerBound = "true";
+
+        driverPicker.addEventListener("mousemove", (event) => {
+            const entry = getStandingsChartDriverEntryFromEventTarget(event.target);
+            setHoveredDriverId(entry?.dataset.driverId || null);
+        });
+
+        driverPicker.addEventListener("mouseleave", () => {
+            setHoveredDriverId(null);
+        });
+
+        driverPicker.addEventListener("pointerdown", (event) => {
+            const entry = getStandingsChartDriverEntryFromEventTarget(event.target);
+            if (!entry?.dataset.driverId) {
+                return;
+            }
+
+            event.preventDefault();
+            toggleSelectedDriverId(entry.dataset.driverId);
+        });
+    }
+
+    renderStandingsChartDriverPicker();
+}
+
+function getStandingsChartElements() {
+    return {
+        canvas: document.getElementById("standings-chart-canvas"),
+        empty: document.getElementById("standings-chart-empty"),
+        loading: document.getElementById("standings-chart-loading"),
+        controls: document.getElementById("standings-chart-controls"),
+        zoomInButton: document.getElementById("standings-chart-zoom-in"),
+        zoomOutButton: document.getElementById("standings-chart-zoom-out"),
+        resetButton: document.getElementById("standings-chart-reset"),
+        subtitle: document.getElementById("standings-chart-subtitle")
+    };
+}
+
+function setStandingsChartSubtitle(text) {
+    const { subtitle } = getStandingsChartElements();
+    if (subtitle) {
+        subtitle.textContent = text;
+    }
+}
+
+function setStandingsChartState({ loading = false, message = "", hasChart = false }) {
+    const { canvas, empty, loading: loadingElement, resetButton, controls } = getStandingsChartElements();
+
+    if (canvas) {
+        canvas.hidden = !hasChart;
+    }
+
+    if (empty) {
+        const showEmpty = !loading && !hasChart && Boolean(message);
+        empty.hidden = !showEmpty;
+        if (showEmpty) {
+            empty.textContent = message;
+        }
+    }
+
+    if (loadingElement) {
+        loadingElement.hidden = !loading;
+        if (loading && message) {
+            loadingElement.textContent = message;
+        }
+    }
+
+    if (resetButton) {
+        resetButton.hidden = !hasChart;
+    }
+
+    if (controls) {
+        controls.hidden = !hasChart;
+    }
+
+    updateStandingsChartScaleControls();
+    updateStandingsChartCanvasInteractionState();
+}
+
+function updateStandingsChartScaleControls() {
+    const { zoomInButton, zoomOutButton, resetButton, controls } = getStandingsChartElements();
+    const hasChart = Boolean(standingsChartInstance);
+
+    if (controls) {
+        controls.hidden = !hasChart;
+    }
+
+    if (zoomInButton) {
+        zoomInButton.disabled = !hasChart || standingsChartYZoomStep >= 8;
+    }
+
+    if (zoomOutButton) {
+        zoomOutButton.disabled = !hasChart || standingsChartYZoomStep <= 0;
+    }
+
+    if (resetButton) {
+        resetButton.disabled = !hasChart || standingsChartYZoomStep === 0;
+    }
+}
+
+function updateStandingsChartCanvasInteractionState() {
+    const { canvas } = getStandingsChartElements();
+    if (!canvas) {
+        return;
+    }
+
+    const isPannable = standingsViewMode === "charts"
+        && Boolean(standingsChartInstance)
+        && standingsChartYZoomStep > 0;
+
+    canvas.classList.toggle("is-pannable", isPannable && !standingsChartDragState);
+    canvas.classList.toggle("is-panning", Boolean(standingsChartDragState));
+}
+
+function getStandingsChartVisibleYRange(datasets) {
+    const bounds = getStandingsChartYBounds(datasets);
+    if (!bounds) {
+        return null;
+    }
+
+    const zoomFactor = Math.pow(0.78, standingsChartYZoomStep);
+    return Math.max(1000, bounds.range * zoomFactor);
+}
+
+function clampStandingsChartYPanOffsetMs(offsetMs, datasets) {
+    const bounds = getStandingsChartYBounds(datasets);
+    if (!bounds || standingsChartYZoomStep <= 0) {
+        return 0;
+    }
+
+    const visibleRange = getStandingsChartVisibleYRange(datasets);
+    if (!Number.isFinite(visibleRange) || visibleRange >= bounds.range) {
+        return 0;
+    }
+
+    const maxOffset = Math.max(0, (bounds.range - visibleRange) / 2);
+    return Math.max(-maxOffset, Math.min(maxOffset, Number(offsetMs) || 0));
+}
+
+function getStandingsChartYBounds(datasets) {
+    const lapTimes = datasets.flatMap((dataset) =>
+        Array.isArray(dataset?.data)
+            ? dataset.data.map((point) => Number(point?.y)).filter(Number.isFinite)
+            : []
+    );
+
+    if (lapTimes.length === 0) {
+        return null;
+    }
+
+    const rawMin = Math.min(...lapTimes);
+    const rawMax = Math.max(...lapTimes);
+    const rawRange = Math.max(1000, rawMax - rawMin);
+    const padding = Math.max(300, rawRange * 0.08);
+    const min = rawMin - padding;
+    const max = rawMax + padding;
+
+    return {
+        min,
+        max,
+        center: (min + max) / 2,
+        range: max - min
+    };
+}
+
+function applyStandingsChartYScale(scales, datasets) {
+    if (!scales?.y) {
+        return;
+    }
+
+    delete scales.y.min;
+    delete scales.y.max;
+    scales.y.grace = "5%";
+
+    if (standingsChartYZoomStep <= 0) {
+        standingsChartYPanOffsetMs = 0;
+        return;
+    }
+
+    const bounds = getStandingsChartYBounds(datasets);
+    if (!bounds) {
+        return;
+    }
+
+    const visibleRange = getStandingsChartVisibleYRange(datasets);
+    standingsChartYPanOffsetMs = clampStandingsChartYPanOffsetMs(standingsChartYPanOffsetMs, datasets);
+    const center = bounds.center + standingsChartYPanOffsetMs;
+    scales.y.min = center - (visibleRange / 2);
+    scales.y.max = center + (visibleRange / 2);
+    delete scales.y.grace;
+}
+
+function applyStandingsChartScaleStateToInstance() {
+    if (!standingsChartInstance) {
+        updateStandingsChartScaleControls();
+        updateStandingsChartCanvasInteractionState();
+        return;
+    }
+
+    const datasets = Array.isArray(standingsChartInstance.data?.datasets)
+        ? standingsChartInstance.data.datasets
+        : [];
+    applyStandingsChartYScale(standingsChartInstance.options?.scales, datasets);
+    standingsChartInstance.update("none");
+    updateStandingsChartScaleControls();
+    updateStandingsChartCanvasInteractionState();
+}
+
+function adjustStandingsChartYZoomStep(delta) {
+    const nextZoomStep = Math.max(0, Math.min(8, standingsChartYZoomStep + delta));
+    if (nextZoomStep === standingsChartYZoomStep) {
+        return;
+    }
+
+    standingsChartYZoomStep = nextZoomStep;
+    if (standingsChartYZoomStep <= 0) {
+        standingsChartYPanOffsetMs = 0;
+    }
+
+    if (standingsChartInstance) {
+        applyStandingsChartScaleStateToInstance();
+    } else if (standingsViewMode === "charts") {
+        renderStandingsChartView();
+    } else {
+        updateStandingsChartScaleControls();
+        updateStandingsChartCanvasInteractionState();
+    }
+}
+
+function handleStandingsChartWheel(event) {
+    if (standingsViewMode !== "charts" || !standingsChartInstance || event.deltaY === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    adjustStandingsChartYZoomStep(event.deltaY < 0 ? 1 : -1);
+}
+
+function finishStandingsChartPointerInteraction(event) {
+    if (!standingsChartDragState) {
+        return;
+    }
+
+    if (event?.pointerId != null && standingsChartDragState.pointerId !== event.pointerId) {
+        return;
+    }
+
+    standingsChartDragState = null;
+    updateStandingsChartCanvasInteractionState();
+}
+
+function handleStandingsChartPointerDown(event) {
+    if (standingsViewMode !== "charts" || !standingsChartInstance || standingsChartYZoomStep <= 0 || event.button !== 0) {
+        return;
+    }
+
+    const { canvas } = getStandingsChartElements();
+    if (!canvas) {
+        return;
+    }
+
+    const datasets = Array.isArray(standingsChartInstance.data?.datasets)
+        ? standingsChartInstance.data.datasets
+        : [];
+    const visibleRange = getStandingsChartVisibleYRange(datasets);
+    if (!visibleRange) {
+        return;
+    }
+
+    event.preventDefault();
+    hideStandingsChartTooltip();
+    standingsChartDragState = {
+        pointerId: event.pointerId,
+        startClientY: event.clientY,
+        startOffsetMs: standingsChartYPanOffsetMs,
+        visibleRange
+    };
+
+    canvas.setPointerCapture?.(event.pointerId);
+    updateStandingsChartCanvasInteractionState();
+}
+
+function handleStandingsChartPointerMove(event) {
+    if (!standingsChartDragState || standingsChartDragState.pointerId !== event.pointerId || !standingsChartInstance) {
+        return;
+    }
+
+    const { canvas } = getStandingsChartElements();
+    const canvasHeight = Math.max(1, Number(canvas?.clientHeight) || 1);
+    const deltaRatio = (event.clientY - standingsChartDragState.startClientY) / canvasHeight;
+    standingsChartYPanOffsetMs = standingsChartDragState.startOffsetMs + (deltaRatio * standingsChartDragState.visibleRange);
+    standingsChartYPanOffsetMs = clampStandingsChartYPanOffsetMs(
+        standingsChartYPanOffsetMs,
+        Array.isArray(standingsChartInstance.data?.datasets) ? standingsChartInstance.data.datasets : []
+    );
+    applyStandingsChartScaleStateToInstance();
+}
+
+function getOrCreateStandingsChartTooltip() {
+    let tooltip = document.getElementById("standings-chart-tooltip");
+    if (tooltip) {
+        return tooltip;
+    }
+
+    tooltip = document.createElement("div");
+    tooltip.id = "standings-chart-tooltip";
+    tooltip.className = "standings-chart-tooltip";
+    document.body.appendChild(tooltip);
+    return tooltip;
+}
+
+function hideStandingsChartTooltip() {
+    const tooltip = document.getElementById("standings-chart-tooltip");
+    if (!tooltip) {
+        return;
+    }
+
+    tooltip.classList.remove("is-visible");
+    tooltip.innerHTML = "";
+}
+
+function positionStandingsChartTooltip(chart, tooltipModel, tooltipElement) {
+    const rect = chart.canvas.getBoundingClientRect();
+    const margin = 12;
+
+    tooltipElement.style.left = "0px";
+    tooltipElement.style.top = "0px";
+    tooltipElement.style.visibility = "hidden";
+    tooltipElement.classList.add("is-visible");
+
+    const tooltipWidth = tooltipElement.offsetWidth;
+    const tooltipHeight = tooltipElement.offsetHeight;
+
+    let left = rect.left + window.scrollX + tooltipModel.caretX + margin;
+    let top = rect.top + window.scrollY + tooltipModel.caretY - (tooltipHeight / 2);
+
+    if (left + tooltipWidth > window.scrollX + window.innerWidth - margin) {
+        left = rect.left + window.scrollX + tooltipModel.caretX - tooltipWidth - margin;
+    }
+
+    left = Math.max(window.scrollX + margin, left);
+    top = Math.max(window.scrollY + margin, Math.min(top, window.scrollY + window.innerHeight - tooltipHeight - margin));
+
+    tooltipElement.style.left = `${Math.round(left)}px`;
+    tooltipElement.style.top = `${Math.round(top)}px`;
+    tooltipElement.style.visibility = "visible";
+}
+
+function renderStandingsChartTooltip(context) {
+    const { chart, tooltip } = context;
+    if (!tooltip || tooltip.opacity === 0 || !Array.isArray(tooltip.dataPoints) || tooltip.dataPoints.length === 0) {
+        hideStandingsChartTooltip();
+        return;
+    }
+
+    const tooltipElement = getOrCreateStandingsChartTooltip();
+    const point = tooltip.dataPoints[0];
+    const dataset = chart?.data?.datasets?.[point.datasetIndex] || {};
+    const lapNumber = Number(point.raw?.x || point.parsed?.x || 0);
+    const lapTimeMs = Math.round(Number(point.raw?.y || point.parsed?.y || 0));
+    const validityLabel = point.raw?.isValid === false ? "Invalid lap" : "Valid lap";
+
+    tooltipElement.innerHTML = `
+        <div class="standings-chart-tooltip-header">${lapNumber > 0 ? `Lap ${lapNumber}` : "Lap"}</div>
+        <div class="standings-chart-tooltip-driver-row">
+            <span class="standings-chart-driver-chip-dot" style="background:${dataset.seriesColor || dataset.borderColor || "#94a3b8"}"></span>
+            <div class="standings-chart-tooltip-driver-name">${dataset.driverLabelHtml || escapeHtml(dataset.label || "Driver")}</div>
+        </div>
+        <div class="standings-chart-tooltip-value-row">
+            <span class="standings-chart-tooltip-lap-time">${formatTime(lapTimeMs)}</span>
+            <span class="standings-chart-tooltip-validity">${validityLabel}</span>
+        </div>`;
+
+    positionStandingsChartTooltip(chart, tooltip, tooltipElement);
+}
+
+function destroyStandingsChart() {
+    if (!standingsChartInstance) {
+        hideStandingsChartTooltip();
+        standingsChartDragState = null;
+        updateStandingsChartScaleControls();
+        updateStandingsChartCanvasInteractionState();
+        return;
+    }
+
+    standingsChartInstance.destroy();
+    standingsChartInstance = null;
+    hideStandingsChartTooltip();
+    standingsChartYZoomStep = 0;
+    standingsChartYPanOffsetMs = 0;
+    standingsChartDragState = null;
+    updateStandingsChartScaleControls();
+    updateStandingsChartCanvasInteractionState();
+}
+
+function loadExternalScript({ url, dataAttribute, isReady, errorMessage }) {
+    if (isReady()) {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+        const selector = `script[${dataAttribute}="true"]`;
+        const existingScript = document.querySelector(selector);
+
+        if (existingScript) {
+            existingScript.addEventListener("load", () => {
+                if (isReady()) {
+                    resolve();
+                } else {
+                    reject(new Error(errorMessage));
+                }
+            }, { once: true });
+            existingScript.addEventListener("error", () => reject(new Error(errorMessage)), { once: true });
+            return;
+        }
+
+        const script = document.createElement("script");
+        script.src = url;
+        script.async = true;
+        script.setAttribute(dataAttribute, "true");
+        script.onload = () => {
+            if (isReady()) {
+                resolve();
+            } else {
+                reject(new Error(errorMessage));
+            }
+        };
+        script.onerror = () => reject(new Error(errorMessage));
+        document.head.appendChild(script);
+    });
+}
+
+function ensureStandingsChartLibraries() {
+    if (typeof Chart !== "undefined") {
+        return Promise.resolve();
+    }
+
+    if (standingsChartLibraryLoadPromise) {
+        return standingsChartLibraryLoadPromise;
+    }
+
+    standingsChartLibraryLoadPromise = loadExternalScript({
+        url: "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js",
+        dataAttribute: "data-chartjs-client",
+        isReady: () => typeof Chart !== "undefined",
+        errorMessage: "Failed to load Chart.js"
+    }).catch((error) => {
+        standingsChartLibraryLoadPromise = null;
+        throw error;
+    });
+
+    return standingsChartLibraryLoadPromise;
+}
+
+function stripHtmlToText(value) {
+    const container = document.createElement("div");
+    container.innerHTML = String(value || "");
+    return (container.textContent || container.innerText || "").trim();
+}
+
+function toStandingsChartFillColor(color, alpha = 0.14) {
+    const normalizedColor = String(color || "").trim();
+    const shortHexMatch = normalizedColor.match(/^#([0-9a-f]{3})$/i);
+    if (shortHexMatch) {
+        const [red, green, blue] = shortHexMatch[1].split("").map((channel) => parseInt(`${channel}${channel}`, 16));
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    }
+
+    const longHexMatch = normalizedColor.match(/^#([0-9a-f]{6})$/i);
+    if (longHexMatch) {
+        const hex = longHexMatch[1];
+        const red = parseInt(hex.slice(0, 2), 16);
+        const green = parseInt(hex.slice(2, 4), 16);
+        const blue = parseInt(hex.slice(4, 6), 16);
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    }
+
+    const rgbMatch = normalizedColor.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+    if (rgbMatch) {
+        return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${alpha})`;
+    }
+
+    return normalizedColor;
+}
+
+function isNeutralStandingsDisplayColor(color) {
+    const normalizedColor = String(color || "").trim().toLowerCase();
+    return normalizedColor === ""
+        || normalizedColor === "#9ca3af"
+        || normalizedColor === "#cbd5e1"
+        || normalizedColor === "#94a3b8"
+        || normalizedColor === "#6b8e23"
+        || normalizedColor === "#ffffff"
+        || normalizedColor === "#000000"
+        || normalizedColor === "rgb(156, 163, 175)"
+        || normalizedColor === "rgb(203, 213, 225)"
+        || normalizedColor === "rgb(148, 163, 184)"
+        || normalizedColor === "rgb(255, 255, 255)"
+        || normalizedColor === "rgb(0, 0, 0)";
+}
+
+function getStandingsChartDriverLabelHtml(driver) {
+    const formattedLabel = String(driver?.mapLabelHtml || driver?.nameHtml || "").trim();
+    if (formattedLabel) {
+        return formattedLabel;
+    }
+
+    const rawName = String(driver?.name || `Driver ${driver?.playerId || "?"}`);
+    return convertLfsTextToHtml(rawName) || escapeHtml(rawName);
+}
+
+function getStandingsChartSeriesColor(seriesIndex) {
+    const numericSeriesIndex = Number(seriesIndex);
+    if (!Number.isFinite(numericSeriesIndex) || numericSeriesIndex < 0) {
+        return STANDINGS_CHART_FALLBACK_PALETTE[0];
+    }
+
+    return STANDINGS_CHART_FALLBACK_PALETTE[numericSeriesIndex % STANDINGS_CHART_FALLBACK_PALETTE.length];
+}
+
+function getSelectedStandingsChartDrivers() {
+    const playersById = new Map((latestSessionData?.players || []).map((driver) => [String(driver.playerId), driver]));
+    return Array.from(selectedDriverIds)
+        .map((driverId) => playersById.get(String(driverId)))
+        .filter(Boolean);
+}
+
+function getStandingsChartSeriesColorMap(selectedDrivers = getSelectedStandingsChartDrivers()) {
+    const seriesColorMap = new Map();
+    selectedDrivers.forEach((driver, seriesIndex) => {
+        seriesColorMap.set(String(driver.playerId), getStandingsChartSeriesColor(seriesIndex));
+    });
+
+    return seriesColorMap;
+}
+
+function getStandingsChartLegendDotColor(driver, seriesColorMap) {
+    const selectedColor = seriesColorMap.get(String(driver?.playerId));
+    if (selectedColor) {
+        return selectedColor;
+    }
+
+    const driverColor = String(driver?.driverColor || "").trim();
+    return driverColor && !isNeutralStandingsDisplayColor(driverColor)
+        ? driverColor
+        : "#475569";
+}
+
+function getStandingsChartDriverLabel(driver) {
+    return stripHtmlToText(getStandingsChartDriverLabelHtml(driver));
+}
+
+function getStandingsChartDriverEntryFromEventTarget(target) {
+    if (target instanceof Element) {
+        return target.closest(".standings-chart-driver-chip[data-driver-id]");
+    }
+
+    if (target instanceof Node && target.parentElement) {
+        return target.parentElement.closest(".standings-chart-driver-chip[data-driver-id]");
+    }
+
+    return null;
+}
+
+function refreshStandingsChartDriverPickerInteractionState() {
+    const driverPicker = document.getElementById("standings-chart-driver-picker");
+    if (!driverPicker) {
+        return;
+    }
+
+    driverPicker.querySelectorAll(".standings-chart-driver-chip[data-driver-id]").forEach((entry) => {
+        const driverId = String(entry.dataset.driverId || "");
+        const isSelected = selectedDriverIds.has(driverId);
+        entry.classList.toggle("is-hovered", driverId === hoveredDriverId);
+        entry.classList.toggle("is-selected", isSelected);
+        entry.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
+}
+
+function renderStandingsChartDriverPicker() {
+    const driverPicker = document.getElementById("standings-chart-driver-picker");
+    if (!driverPicker) {
+        return;
+    }
+
+    const drivers = Array.isArray(latestSessionData?.players) ? latestSessionData.players : [];
+    if (drivers.length === 0) {
+        driverPicker.innerHTML = '<div class="standings-chart-driver-picker-empty">Waiting for drivers...</div>';
+        return;
+    }
+
+    const seriesColorMap = getStandingsChartSeriesColorMap();
+    driverPicker.innerHTML = drivers.map((driver) => {
+        const driverId = String(driver.playerId);
+        const isSelected = selectedDriverIds.has(driverId);
+        const isHovered = hoveredDriverId === driverId;
+        const labelHtml = getStandingsChartDriverLabelHtml(driver);
+        const labelText = getStandingsChartDriverLabel(driver);
+        const dotColor = getStandingsChartLegendDotColor(driver, seriesColorMap);
+
+        return `
+            <button
+                type="button"
+                class="standings-chart-driver-chip${isSelected ? ' is-selected' : ''}${isHovered ? ' is-hovered' : ''}"
+                data-driver-id="${driverId}"
+                aria-pressed="${isSelected ? "true" : "false"}"
+                title="${escapeHtml(labelText)}">
+                <span class="standings-chart-driver-chip-dot" style="background:${dotColor}"></span>
+                <span class="standings-chart-driver-chip-label">${labelHtml}</span>
+            </button>`;
+    }).join("");
+
+    refreshStandingsChartDriverPickerInteractionState();
+}
+
+function buildStandingsChartDatasets(drivers) {
+    return drivers.map((driver, seriesIndex) => {
+        const cached = driverLapHistoryCache.get(String(driver.playerId));
+        const points = Array.isArray(cached?.laps)
+            ? cached.laps
+                .filter((lap) => Number(lap?.lapNumber || 0) > 0 && Number(lap?.lapTimeMs || 0) > 0)
+                .map((lap) => ({
+                    x: Number(lap.lapNumber),
+                    y: Number(lap.lapTimeMs),
+                    isValid: lap.isValid !== false
+                }))
+            : [];
+
+        if (points.length === 0) {
+            return null;
+        }
+
+        const color = getStandingsChartSeriesColor(seriesIndex);
+        return {
+            label: getStandingsChartDriverLabel(driver),
+            driverId: String(driver.playerId),
+            driverLabelHtml: getStandingsChartDriverLabelHtml(driver),
+            seriesColor: color,
+            data: points,
+            parsing: false,
+            borderColor: color,
+            backgroundColor: toStandingsChartFillColor(color),
+            borderWidth: 2.25,
+            tension: 0.22,
+            pointRadius: (context) => context.raw?.isValid === false ? 4 : 3,
+            pointHoverRadius: 5,
+            pointBorderWidth: (context) => context.raw?.isValid === false ? 2 : 1.5,
+            pointBackgroundColor: (context) => context.raw?.isValid === false ? "#0f172a" : color,
+            pointBorderColor: color,
+            segment: {
+                borderDash: (context) => {
+                    const startValid = context.p0.raw?.isValid !== false;
+                    const endValid = context.p1.raw?.isValid !== false;
+                    return startValid && endValid ? undefined : [6, 4];
+                }
+            }
+        };
+    }).filter(Boolean);
+}
+
+async function renderStandingsChartView() {
+    if (standingsViewMode !== "charts") {
+        return;
+    }
+
+    const renderToken = ++standingsChartRenderToken;
+    const { canvas } = getStandingsChartElements();
+    if (!canvas) {
+        return;
+    }
+
+    const selectedDrivers = getSelectedStandingsChartDrivers();
+
+    if (selectedDrivers.length === 0) {
+        destroyStandingsChart();
+        setStandingsChartSubtitle("Select drivers in the table or below the chart to compare lap pace and zoom into slower opening laps.");
+        setStandingsChartState({
+            loading: false,
+            message: "Select one or more drivers from the table, map, or picker below to render lap-time trends.",
+            hasChart: false
+        });
+        return;
+    }
+
+    const driversWithCompletedLaps = selectedDrivers.filter((driver) => Number(driver.lastLapNumber || 0) > 0);
+    if (driversWithCompletedLaps.length === 0) {
+        destroyStandingsChart();
+        setStandingsChartSubtitle("Waiting for the selected drivers to complete their first timed lap.");
+        setStandingsChartState({
+            loading: false,
+            message: "The selected drivers do not have completed laps yet.",
+            hasChart: false
+        });
+        return;
+    }
+
+    const driversMissingHistory = driversWithCompletedLaps.filter((driver) => {
+        const cached = driverLapHistoryCache.get(String(driver.playerId));
+        return !cached || cached.loading || cached.lapCount !== Number(driver.lastLapNumber || 0);
+    });
+
+    setStandingsChartSubtitle(`Preparing lap history for ${driversWithCompletedLaps.length} selected driver${driversWithCompletedLaps.length === 1 ? "" : "s"}.`);
+    setStandingsChartState({
+        loading: driversMissingHistory.length > 0,
+        message: driversMissingHistory.length > 0
+            ? `Loading lap history for ${driversMissingHistory.length} driver${driversMissingHistory.length === 1 ? "" : "s"}...`
+            : "",
+        hasChart: Boolean(standingsChartInstance)
+    });
+
+    try {
+        await ensureStandingsChartLibraries();
+    } catch (error) {
+        destroyStandingsChart();
+        setStandingsChartSubtitle("Chart view is unavailable until the chart libraries load correctly.");
+        setStandingsChartState({
+            loading: false,
+            message: error?.message || String(error),
+            hasChart: false
+        });
+        return;
+    }
+
+    if (renderToken !== standingsChartRenderToken || standingsViewMode !== "charts") {
+        return;
+    }
+
+    await Promise.all(driversWithCompletedLaps.map((driver) => ensureDriverLapHistory(driver)));
+
+    if (renderToken !== standingsChartRenderToken || standingsViewMode !== "charts") {
+        return;
+    }
+
+    const datasets = buildStandingsChartDatasets(driversWithCompletedLaps);
+    if (datasets.length === 0) {
+        destroyStandingsChart();
+        setStandingsChartSubtitle("No usable lap history is available for the current selection.");
+        setStandingsChartState({
+            loading: false,
+            message: "No lap history is available for the selected drivers.",
+            hasChart: false
+        });
+        return;
+    }
+
+    const maxLapCount = datasets.reduce((maxCount, dataset) => {
+        const latestPoint = dataset.data[dataset.data.length - 1];
+        return Math.max(maxCount, Number(latestPoint?.x || 0));
+    }, 1);
+
+    const chartConfiguration = {
+        type: "line",
+        data: { datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            normalized: true,
+            interaction: {
+                mode: "nearest",
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false,
+                    external: renderStandingsChartTooltip
+                }
+            },
+            scales: {
+                x: {
+                    type: "linear",
+                    suggestedMin: 1,
+                    suggestedMax: Math.max(2, maxLapCount),
+                    grid: {
+                        color: "rgba(148, 163, 184, 0.12)"
+                    },
+                    ticks: {
+                        color: "#cbd5e1",
+                        precision: 0,
+                        callback: (value) => Number.isInteger(Number(value)) ? `L${value}` : ""
+                    },
+                    title: {
+                        display: true,
+                        text: "Lap",
+                        color: "#94a3b8",
+                        font: {
+                            weight: "600"
+                        }
+                    }
+                },
+                y: {
+                    type: "linear",
+                    grace: "5%",
+                    grid: {
+                        color: "rgba(148, 163, 184, 0.12)"
+                    },
+                    ticks: {
+                        color: "#cbd5e1",
+                        callback: (value) => formatTime(Math.round(Number(value)))
+                    },
+                    title: {
+                        display: true,
+                        text: "Lap Time",
+                        color: "#94a3b8",
+                        font: {
+                            weight: "600"
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    applyStandingsChartYScale(chartConfiguration.options.scales, datasets);
+
+    if (standingsChartInstance) {
+        standingsChartInstance.data = chartConfiguration.data;
+        standingsChartInstance.options = chartConfiguration.options;
+        standingsChartInstance.update("none");
+    } else {
+        standingsChartInstance = new Chart(canvas.getContext("2d"), chartConfiguration);
+    }
+
+    setStandingsChartSubtitle(`Comparing ${datasets.length} driver${datasets.length === 1 ? "" : "s"} across up to ${maxLapCount} laps. Dashed segments mark invalid laps.`);
+    setStandingsChartState({ loading: false, message: "", hasChart: true });
+    updateStandingsChartScaleControls();
+    updateStandingsChartCanvasInteractionState();
+    window.requestAnimationFrame(() => standingsChartInstance?.resize?.());
 }
 
 function syncLapHistoryCache(data) {
@@ -1252,48 +2264,76 @@ async function ensureDriverLapHistory(driver) {
     const driverId = String(driver.playerId);
     const cached = driverLapHistoryCache.get(driverId);
 
-    if (lapCount === 0 || cached?.loading || cached?.lapCount === lapCount) {
+    if (lapCount === 0 || (cached?.lapCount === lapCount && !cached?.loading)) {
         return;
     }
+
+    if (cached?.loading && cached?.requestPromise) {
+        return cached.requestPromise;
+    }
+
+    if (cached?.loading) {
+        return;
+    }
+
+    let requestPromise = null;
+
+    requestPromise = (async () => {
+        try {
+            const response = await window.signalRConnection?.invoke("GetDriverLapHistory", Number(driver.playerId));
+            driverLapHistoryCache.set(driverId, {
+                lapCount,
+                laps: Array.isArray(response?.laps) ? response.laps : [],
+                loading: false,
+                requestPromise: null
+            });
+        } catch (error) {
+            console.warn(`Failed to load lap history for player ${driver.playerId}: ${error?.message || error}`);
+            driverLapHistoryCache.set(driverId, {
+                lapCount,
+                laps: cached?.laps || [],
+                loading: false,
+                requestPromise: null
+            });
+        }
+
+        updateLapHistoryTooltip();
+    })();
 
     driverLapHistoryCache.set(driverId, {
         lapCount,
         laps: cached?.laps || [],
-        loading: true
+        loading: true,
+        requestPromise
     });
     updateLapHistoryTooltip();
 
-    try {
-        const response = await window.signalRConnection?.invoke("GetDriverLapHistory", Number(driver.playerId));
-        driverLapHistoryCache.set(driverId, {
-            lapCount,
-            laps: Array.isArray(response?.laps) ? response.laps : [],
-            loading: false
-        });
-    } catch (error) {
-        console.warn(`Failed to load lap history for player ${driver.playerId}: ${error?.message || error}`);
-        driverLapHistoryCache.set(driverId, {
-            lapCount,
-            laps: cached?.laps || [],
-            loading: false
-        });
-    }
-
-    updateLapHistoryTooltip();
+    return requestPromise;
 }
 
 // ── SignalR Loading & Connection ───────────────────────────
 
 function loadSignalRScript() {
-    return new Promise((resolve, reject) => {
-        if (typeof signalR !== 'undefined') {
-            resolve(); // Already loaded
+    if (typeof signalR !== 'undefined') {
+        return Promise.resolve();
+    }
+
+    if (signalRScriptLoadPromise) {
+        return signalRScriptLoadPromise;
+    }
+
+    signalRScriptLoadPromise = new Promise((resolve, reject) => {
+        const existingScript = document.querySelector('script[data-signalr-client="true"]');
+        if (existingScript) {
+            existingScript.addEventListener('load', () => resolve(), { once: true });
+            existingScript.addEventListener('error', () => reject(new Error('Failed to load SignalR')), { once: true });
             return;
         }
 
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js';
         script.async = true;
+        script.dataset.signalrClient = 'true';
         script.onerror = () => reject(new Error('Failed to load SignalR'));
         script.onload = () => {
             if (typeof signalR !== 'undefined') {
@@ -1303,7 +2343,12 @@ function loadSignalRScript() {
             }
         };
         document.head.appendChild(script);
+    }).catch((error) => {
+        signalRScriptLoadPromise = null;
+        throw error;
     });
+
+    return signalRScriptLoadPromise;
 }
 
 function waitForSignalR(callback, maxAttempts = 300) {
@@ -1331,13 +2376,22 @@ function waitForSignalR(callback, maxAttempts = 300) {
 }
 
 function initializeConnection() {
+    if (signalRConnectionInitialized || typeof signalR === 'undefined') {
+        return;
+    }
+
+    signalRConnectionInitialized = true;
+
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/hubs/timing")
         .withAutomaticReconnect([1000, 3000, 5000, 10000, 30000])
         .build();
 
-    connection.onreconnecting(() => {
-        debugLog("Reconnecting...", 'warn');
+    connection.serverTimeoutInMilliseconds = 60000;
+    connection.keepAliveIntervalInMilliseconds = 15000;
+
+    connection.onreconnecting((error) => {
+        debugLog(`Reconnecting... ${error?.message || 'Connection interrupted'}`, 'warn');
         updateConnectionStatus(false, "Reconnecting...");
     });
 
@@ -1362,6 +2416,7 @@ function initializeConnection() {
         window.TrackMapController?.handleSessionUpdate(data);
         renderChatMessages(data);
         updateDriversTable(data);
+        renderStandingsChartDriverPicker();
         updateBestLaps(data);
         syncLapHistoryHoverState();
         syncDriverProfileHoverState();
@@ -1375,6 +2430,10 @@ function initializeConnection() {
 
         updateLapHistoryTooltip();
         updateDriverProfileTooltip();
+
+        if (standingsViewMode === "charts") {
+            renderStandingsChartView();
+        }
     });
 
     connection.start()
@@ -1383,6 +2442,7 @@ function initializeConnection() {
             updateConnectionStatus(true, "Connected");
         })
         .catch(error => {
+            signalRConnectionInitialized = false;
             debugLog(`Connection failed: ${error.message}`, 'error');
             updateConnectionStatus(false, `Error: ${error.message || 'Connection Failed'}`);
             setTimeout(() => attemptReconnect(connection), 3000);
@@ -1396,7 +2456,10 @@ function attemptReconnect(connection) {
 
     debugLog("Attempting reconnect...", 'warn');
     connection.start()
-        .then(() => debugLog("Reconnected", 'info'))
+        .then(() => {
+            signalRConnectionInitialized = true;
+            debugLog("Reconnected", 'info');
+        })
         .catch(error => {
             debugLog(`Reconnect failed: ${error.message}`, 'error');
             setTimeout(() => attemptReconnect(connection), 5000);
@@ -1442,6 +2505,73 @@ function formatTime(ms, isGap = false) {
         return isNegative ? `-${formatted}` : `+${formatted}`;
     }
     return formatted;
+}
+
+function formatGapTrendDelta(ms) {
+    return `${(ms / 1000).toFixed(3)}s`;
+}
+
+function getGapTrend(driverId, rivalPlayerId, gapToPreviousMs) {
+    if (!driverId || !rivalPlayerId || !Number.isFinite(gapToPreviousMs) || gapToPreviousMs <= 0) {
+        gapTrendStateByDriverId.delete(String(driverId));
+        return null;
+    }
+
+    const stateKey = String(driverId);
+    const previousState = gapTrendStateByDriverId.get(stateKey);
+
+    if (!previousState || previousState.rivalPlayerId !== String(rivalPlayerId)) {
+        gapTrendStateByDriverId.set(stateKey, {
+            rivalPlayerId: String(rivalPlayerId),
+            gapToPreviousMs,
+            trend: null
+        });
+        return null;
+    }
+
+    if (previousState.gapToPreviousMs === gapToPreviousMs) {
+        return previousState.trend;
+    }
+
+    const deltaMs = gapToPreviousMs - previousState.gapToPreviousMs;
+    let trend = {
+        direction: "stable",
+        deltaMs: Math.abs(deltaMs),
+        title: "Gap stable since the previous timing point"
+    };
+
+    if (Math.abs(deltaMs) >= GAP_TREND_DEADBAND_MS) {
+        trend = deltaMs < 0
+            ? {
+                direction: "closing",
+                deltaMs: Math.abs(deltaMs),
+                title: `Closing on the car ahead by ${formatGapTrendDelta(Math.abs(deltaMs))} since the previous timing point`
+            }
+            : {
+                direction: "dropping",
+                deltaMs: Math.abs(deltaMs),
+                title: `Losing ${formatGapTrendDelta(Math.abs(deltaMs))} to the car ahead since the previous timing point`
+            };
+    }
+
+    previousState.gapToPreviousMs = gapToPreviousMs;
+    previousState.trend = trend;
+    gapTrendStateByDriverId.set(stateKey, previousState);
+    return trend;
+}
+
+function renderGapTrend(trend) {
+    if (!trend) {
+        return "";
+    }
+
+    if (trend.direction === "stable") {
+        return "";
+    }
+
+    const directionIcon = trend.direction === "closing" ? "↓" : "↑";
+
+    return `<span class="gap-trend gap-trend--${trend.direction}" title="${trend.title}"><span class="gap-trend-icon" aria-hidden="true">${directionIcon}</span></span>`;
 }
 
 function getTimeClass(currentTime, bestSessionTime, bestPersonalTime) {
@@ -1681,10 +2811,28 @@ function renderChatMessages(data) {
 
 // ── Drivers Table Update ──────────────────────────────────
 
+function buildDriverTableRowElement(rowMarkup) {
+    const template = document.createElement("template");
+    template.innerHTML = rowMarkup.trim();
+    return template.content.firstElementChild instanceof HTMLTableRowElement
+        ? template.content.firstElementChild
+        : null;
+}
+
 function updateDriversTable(data) {
     const tableBody = document.getElementById("drivers-table");
     const playerIds = new Set((data.players || []).map(player => String(player.playerId)));
     pruneSelectedDriverIds(playerIds);
+    Array.from(gapTrendStateByDriverId.keys()).forEach((driverId) => {
+        if (!playerIds.has(driverId)) {
+            gapTrendStateByDriverId.delete(driverId);
+        }
+    });
+    Array.from(driverTableRowMarkupCache.keys()).forEach((driverId) => {
+        if (!playerIds.has(driverId)) {
+            driverTableRowMarkupCache.delete(driverId);
+        }
+    });
 
     if (hoveredDriverId && !playerIds.has(hoveredDriverId)) {
         setHoveredDriverId(null);
@@ -1704,12 +2852,23 @@ function updateDriversTable(data) {
         return;
     }
 
-    let html = "";
+    tableBody.querySelectorAll("tr:not([data-driver-id])").forEach((row) => row.remove());
+
+    const existingRowsByDriverId = new Map(
+        Array.from(tableBody.querySelectorAll("tr[data-driver-id]"))
+            .map((row) => [row.dataset.driverId, row])
+    );
+    const sectorNumbers = getSectorNumbers(data);
+
     data.players.forEach((driver, index) => {
         const position = index + 1;
-        const sectorNumbers = getSectorNumbers(data);
+        const previousDriver = index > 0 ? data.players[index - 1] : null;
+        const driverId = String(driver.playerId);
         const hasGapToPrevious = driver.gapToPreviousMs !== null && driver.gapToPreviousMs !== undefined;
         const isFightForPosition = hasGapToPrevious && driver.gapToPreviousMs > 0 && driver.gapToPreviousMs < 1000;
+        const gapTrend = position === 1 || !previousDriver
+            ? null
+            : getGapTrend(driver.playerId, previousDriver.playerId, driver.gapToPreviousMs);
 
         const gap = position === 1
             ? "-"
@@ -1759,14 +2918,14 @@ function updateDriversTable(data) {
         const driverColor = driver.driverColor || "#9CA3AF";
         const driverNameStyle = `style="background-color: ${driverColor}15; border-left: 3px solid ${driverColor}; color: #F5F5F5;"`;
 
-        html += `
+        const rowMarkup = `
             <tr class="driver-row${hoverClass}${selectedClass}" data-driver-id="${driver.playerId}">
                 <td class="px-4 py-3">
                     <div class="position-badge ${positionBadgeClass}">${position}</div>
                 </td>
-                <td class="px-4 py-3 font-semibold driver-name${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
+                <td class="px-4 py-3 font-semibold driver-name standings-column--driver${driver.username ? ' driver-name--profile' : ''}" ${driverNameStyle}${driver.username ? ` data-driver-profile-id="${driver.playerId}"` : ''}>${renderDriverIdentity(driver)}</td>
                 <td class="px-4 py-3 text-sm text-gray-400">${driver.carName}</td>
-                <td class="px-4 py-3">${driver.lapsCompleted}</td>
+                <td class="px-3 py-3 standings-column--laps">${driver.lapsCompleted}</td>
                 <td class="px-4 py-3 font-mono text-sm">
                     <div class="lap-time-cell lap-history-trigger${isLapHistoryActive ? ' is-active' : ''}" data-last-lap-driver-id="${driver.playerId}">
                         <span class="current-time px-2 py-1 rounded">${formatTime(driver.lastLapTimeMs)}</span>
@@ -1774,18 +2933,16 @@ function updateDriversTable(data) {
                     </div>
                 </td>
                 <td class="px-4 py-3 text-sm gap-indicator">
-                    <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
-                        ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
-                        <span>${gap}</span>
+                    <span class="gap-chip-stack${isFightForPosition ? ' is-battle' : ''}">
+                        <span class="gap-chip${isFightForPosition ? ' is-battle' : ''}">
+                            ${isFightForPosition ? '<span class="gap-fight-dot"></span>' : ''}
+                            <span>${gap}</span>
+                            ${position === 1 ? '' : renderGapTrend(gapTrend)}
+                        </span>
+                        ${isFightForPosition ? '<span class="gap-battle-label">Position FIGHT</span>' : ''}
                     </span>
                 </td>
-                <td class="px-4 py-3 font-mono text-sm">
-                    <div class="lap-time-cell">
-                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
-                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
-                    </div>
-                </td>
-                <td class="px-4 py-3 text-xs">
+                <td class="px-4 py-3 text-xs standings-column--sectors">
                     ${sectorNumbers.length === 0
                         ? '<span class="text-gray-500">-</span>'
                         : sectorNumbers.map(sectorNum => `
@@ -1794,15 +2951,43 @@ function updateDriversTable(data) {
                                 ${getSectorDelta(sectorNum) ? `<span class="sector-delta">${getSectorDelta(sectorNum)}</span>` : ""}
                             </div>`).join('')}
                 </td>
-                <td class="px-4 py-3 text-sm font-mono text-gray-300">${formatSpeedKmh(driver.topSpeedKmh)}</td>
+                <td class="px-4 py-3 font-mono text-sm">
+                    <div class="lap-time-cell">
+                        <span class="${lapTimeClass} px-2 py-1 rounded">${formatTime(driver.personalBestLapMs)}</span>
+                        ${bestLapDelta ? `<span class="lap-time-delta">${bestLapDelta}</span>` : ""}
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-sm font-mono text-gray-300 standings-column--top-speed">${formatSpeedKmh(driver.topSpeedKmh)}</td>
                 <td class="px-4 py-3">
                     ${renderTyreSummary(driver.tyreTypes)}
                 </td>
                 <td class="px-4 py-3 text-center">${renderPitSummary(driver)}</td>
             </tr>`;
+
+        let row = existingRowsByDriverId.get(driverId) || null;
+        const previousMarkup = driverTableRowMarkupCache.get(driverId);
+
+        if (!row) {
+            row = buildDriverTableRowElement(rowMarkup);
+        } else if (previousMarkup !== rowMarkup) {
+            const nextRow = buildDriverTableRowElement(rowMarkup);
+            if (nextRow) {
+                row.className = nextRow.className;
+                row.innerHTML = nextRow.innerHTML;
+            }
+        }
+
+        if (row) {
+            tableBody.appendChild(row);
+            driverTableRowMarkupCache.set(driverId, rowMarkup);
+        }
     });
 
-    tableBody.innerHTML = html;
+    existingRowsByDriverId.forEach((row, driverId) => {
+        if (!playerIds.has(driverId)) {
+            row.remove();
+        }
+    });
 
     refreshDriverHoverState();
     refreshLapHistoryTriggerStyles();
@@ -1934,6 +3119,7 @@ console.warn = function (...args) {
 document.addEventListener('DOMContentLoaded', () => {
     initializeTableHoverState();
     initializeStandingsViewToggle();
+    initializeStandingsChartControls();
     startLocalDateTimeClock();
     loadAppMetadata();
     window.TrackMapController?.initialize({

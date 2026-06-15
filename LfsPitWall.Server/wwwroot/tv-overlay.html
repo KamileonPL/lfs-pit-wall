@@ -4,11 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LFS Pit Wall - TV Overlay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/tv-overlay.css">
 </head>
 <body>
     <main class="tv-overlay-root" aria-label="Live TV overlay">
         <div class="tv-overlay-stage">
+            <section class="tv-overlay-focus-panel" id="overlay-focus-panel" aria-label="Viewed driver live sectors" hidden>
+                <div class="tv-overlay-focus-driver-row">
+                    <div class="tv-overlay-focus-title-row">
+                        <p class="tv-overlay-focus-position" id="overlay-focus-position">P-</p>
+                        <p class="tv-overlay-focus-name" id="overlay-focus-name">-</p>
+                    </div>
+                    <div class="tv-overlay-focus-meta-row">
+                        <p class="tv-overlay-focus-lap" id="overlay-focus-lap">LAP -</p>
+                        <p class="tv-overlay-focus-best" id="overlay-focus-best">BEST -</p>
+                    </div>
+                </div>
+                <div class="tv-overlay-sector-grid" id="overlay-sector-grid"></div>
+            </section>
+
             <div class="tv-overlay-left-rail">
                 <section class="tv-overlay-header">
                     <div class="tv-overlay-progress-card">
@@ -24,21 +41,25 @@
                     </div>
                 </section>
 
-                <section class="tv-overlay-standings-panel" aria-label="TV overlay standings">
-                    <header class="tv-overlay-panel-header">
-                        <div>
-                            <p class="tv-overlay-panel-title">STANDINGS</p>
-                            <p class="tv-overlay-panel-subtitle" id="overlay-window-label">FULL FIELD</p>
+                <div class="tv-overlay-standings-shell">
+                    <section class="tv-overlay-standings-panel" aria-label="TV overlay standings">
+                        <header class="tv-overlay-panel-header">
+                            <div>
+                                <p class="tv-overlay-panel-title">STANDINGS</p>
+                                <p class="tv-overlay-panel-subtitle" id="overlay-window-label">FULL FIELD</p>
+                            </div>
+                            <div class="tv-overlay-rotation-chip" id="overlay-rotation-label">INTERVAL</div>
+                        </header>
+                        <div class="tv-overlay-standings-list" id="overlay-standings-list">
+                            <div class="tv-overlay-empty-state">Waiting for live timing data...</div>
                         </div>
-                        <div class="tv-overlay-rotation-chip" id="overlay-rotation-label">INTERVAL</div>
-                    </header>
-                    <div class="tv-overlay-standings-list" id="overlay-standings-list">
-                        <div class="tv-overlay-empty-state">Waiting for live timing data...</div>
-                    </div>
-                </section>
-            </div>
+                    </section>
 
-            <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+                    <div class="tv-overlay-side-column">
+                        <section class="tv-overlay-popup-stack" id="overlay-popup-stack" aria-live="polite"></section>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
