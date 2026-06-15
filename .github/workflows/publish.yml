@@ -33,6 +33,8 @@ jobs:
           -c Release
           -r ${{ matrix.rid }}
           --self-contained true
+          -p:PublishSingleFile=true
+          -p:PublishReadyToRun=true
           -o ./artifacts/publish/${{ matrix.rid }}
 
       - name: Pack artifact
