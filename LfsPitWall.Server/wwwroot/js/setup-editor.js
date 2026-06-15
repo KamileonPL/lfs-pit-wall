@@ -7,6 +7,7 @@ const setupEditorState = {
     formatVersion: 0,
     isPatchX: false,
     isDirty: false,
+    activeSectionId: "brakes",
     selectedCarCode: "",
     gearTargetRpm: 7000
 };
@@ -15,6 +16,9 @@ const tyreBrandOptions = ["Cromo Plain", "Cromo", "Torro", "Michelin", "Evostar"
 const tyreCompoundOptions = ["R1", "R2", "R3", "R4", "Road Super", "Road Normal", "Hybrid", "Knobbly"];
 const centreDiffTypeOptions = ["Open", "Viscous"];
 const axleDiffTypeOptions = ["Open", "Locked", "Viscous", "Clutch Pack"];
+const passengerOptions = ["None", "Male", "Female", "Reserved"];
+const bodyConfigOptions = ["Config 0", "Config 1", "Config 2", "Config 3"];
+const tyreSizeIndexOptions = Array.from({ length: 10 }, (_, index) => `Index ${index}`);
 const supportedCarProfiles = {
     UF1: { name: "UF 1000", drive: "front", frontTyreSpec: "160/50 R12", rearTyreSpec: "160/50 R12" },
     XFG: { name: "XF GTI", drive: "front", frontTyreSpec: "185/50 R15", rearTyreSpec: "185/50 R15" },
@@ -55,6 +59,33 @@ function roundToStep(value, step) {
 function sanitizeNumber(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getStepPrecision(step) {
+    if (!step || Number.isInteger(step)) {
+        return 0;
+    }
+
+    const stepText = String(step);
+    return stepText.includes(".") ? stepText.split(".")[1].length : 0;
+}
+
+function formatNumericValue(value, step = 1) {
+    if (!Number.isFinite(value)) {
+        return "";
+    }
+
+    const rounded = roundToStep(value, step);
+    const precision = Math.min(getStepPrecision(step), 3);
+
+    if (!precision) {
+        return String(Math.round(rounded));
+    }
+
+    return rounded.toFixed(precision)
+        .replace(/(\.\d*?[1-9])0+$/u, "$1")
+        .replace(/\.0+$/u, "")
+        .replace(/\.$/, "");
 }
 
 function createByteField(config) {
@@ -145,6 +176,30 @@ function createBitField(config) {
     };
 }
 
+function createPackedSelectField(config) {
+    const min = config.min ?? 0;
+    const max = config.max ?? ((config.options?.length ?? 1) - 1);
+    const valueMask = config.valueMask ?? 0b11;
+
+    return {
+        ...config,
+        kind: "select",
+        read(view) {
+            return (view.getUint8(config.offset) >> config.shift) & valueMask;
+        },
+        write(view, value) {
+            const normalized = clamp(Math.round(sanitizeNumber(value)), min, max);
+            const current = view.getUint8(config.offset);
+            const shiftedMask = valueMask << config.shift;
+            const encoded = (normalized & valueMask) << config.shift;
+            view.setUint8(config.offset, (current & ~shiftedMask) | encoded);
+        },
+        normalize(value) {
+            return clamp(Math.round(sanitizeNumber(value)), min, max);
+        }
+    };
+}
+
 function formatRatio(raw) {
     return 0.5 + ((raw / 65534) * 7);
 }
@@ -169,97 +224,139 @@ function encodeCamber(value) {
     return (value * 10) + 45;
 }
 
-const setupGroups = [
+const allSetupFields = [
+    createBitField({ id: "absEnabled", offset: 12, bit: 2, label: "ABS", description: "Brake anti-lock flag.", impact: "On: more lock control. Off: more direct braking." }),
+    createBitField({ id: "tcEnabled", offset: 12, bit: 1, label: "Traction Control", description: "Traction control flag.", impact: "On: calmer exits. Off: sharper throttle response." }),
+    createBitField({ id: "asymmetricalSetup", offset: 12, bit: 0, label: "Asymmetrical", description: "Allows left-right tuning differences.", impact: "On: side-specific tuning. Off: mirrored values." }),
+    createByteField({ id: "massPosition", offset: 14, min: 0, max: 100, label: "Mass Position", unit: "%F", description: "Handicap mass position.", impact: "More front: steadier braking. More rear: better traction bias." }),
+    createByteField({ id: "tyreBrand", offset: 15, kind: "select", options: tyreBrandOptions, min: 0, max: tyreBrandOptions.length - 1, label: "Tyre Brand", description: "Tyre manufacturer family.", impact: "Changes the tyre family stored in the file." }),
+    createFloatField({ id: "brakeStrength", offset: 16, min: 0, max: 10000, step: 1, label: "Brake Strength", unit: "Nm", description: "Base brake torque.", impact: "More: shorter stops, more lock risk. Less: easier modulation." }),
+    createByteField({ id: "rearWing", offset: 20, min: 0, max: 60, label: "Rear Wing", description: "Rear wing angle.", impact: "More: rear stability. Less: lower drag and weaker rear grip." }),
+    createByteField({ id: "frontWing", offset: 21, min: 0, max: 60, label: "Front Wing", description: "Front wing angle.", impact: "More: front bite. Less: lower drag and calmer front axle." }),
+    createByteField({ id: "voluntaryMass", offset: 22, min: 0, max: 255, label: "Voluntary Mass", unit: "kg", description: "Added ballast.", impact: "More: slower acceleration and longer braking." }),
+    createByteField({ id: "intakeRestriction", offset: 23, min: 0, max: 100, label: "Intake Restriction", unit: "%", description: "Artificial engine restriction.", impact: "More: less power and top speed. Less: freer engine output." }),
+    createByteField({ id: "steeringLock", offset: 24, min: 0, max: 90, label: "Max Steering Lock", unit: "deg", description: "Maximum front wheel angle.", impact: "More: tighter rotation. Less: calmer steering at speed." }),
+    createByteField({ id: "parallelSteering", offset: 25, min: 0, max: 100, label: "Parallel Steering", unit: "%", description: "Ackermann relation.", impact: "More: wheels steer more equally. Less: stronger inside-wheel angle." }),
+    createByteField({ id: "brakeBalance", offset: 26, min: 0, max: 100, label: "Brake Balance", unit: "%F", description: "Front brake bias.", impact: "More front: safer entry. More rear: more rotation, more rear lock risk." }),
+    createByteField({ id: "centreDiffType", offset: 28, kind: "select", options: centreDiffTypeOptions, min: 0, max: centreDiffTypeOptions.length - 1, label: "Centre Diff Type", description: "Centre differential mode.", impact: "Changes front-rear axle coupling." }),
+    createByteField({ id: "centreDiffViscousTorque", offset: 29, min: 0, max: 255, label: "Centre Viscous Torque", description: "Centre viscous locking.", impact: "More: stronger axle coupling. Less: freer front-rear speed split." }),
+    createByteField({ id: "centreDiffTorqueSplit", offset: 31, min: 0, max: 100, label: "Centre Torque Split", unit: "%F", description: "Static front torque share.", impact: "More front: safer on throttle. More rear: stronger power rotation." }),
+    createWordField({ id: "gear7", offset: 32, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 7", description: "Seventh ratio.", impact: "Longer: more speed. Shorter: more drive at the top end." }),
+    createWordField({ id: "gearFinal", offset: 34, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Final Drive", description: "Final drive ratio.", impact: "Shorter: stronger acceleration. Longer: higher top speed." }),
+    createWordField({ id: "gear1", offset: 36, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 1", description: "First ratio.", impact: "Shorter: stronger launch. Longer: less wheelspin." }),
+    createWordField({ id: "gear2", offset: 38, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 2", description: "Second ratio.", impact: "Shorter: stronger low-speed drive. Longer: fewer shifts." }),
+    createWordField({ id: "gear3", offset: 40, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 3", description: "Third ratio.", impact: "Shorter: more punch in medium-speed corners. Longer: wider range." }),
+    createWordField({ id: "gear4", offset: 42, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 4", description: "Fourth ratio.", impact: "Shorter: stronger acceleration. Longer: lower rpm drop." }),
+    createWordField({ id: "gear5", offset: 44, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 5", description: "Fifth ratio.", impact: "Shorter: stronger pull. Longer: more end-of-straight speed." }),
+    createWordField({ id: "gear6", offset: 46, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 6", description: "Sixth ratio.", impact: "Shorter: better acceleration. Longer: lower drag-limited rpm." }),
+    createPackedSelectField({ id: "passengerFrontRight", offset: 48, shift: 0, options: passengerOptions, label: "Front Right", description: "Front-right passenger slot.", impact: "Seat occupancy stored in the file." }),
+    createPackedSelectField({ id: "passengerRearLeft", offset: 48, shift: 2, options: passengerOptions, label: "Rear Left", description: "Rear-left passenger slot.", impact: "Seat occupancy stored in the file." }),
+    createPackedSelectField({ id: "passengerRearCenter", offset: 48, shift: 4, options: passengerOptions, label: "Rear Centre", description: "Rear-centre passenger slot.", impact: "Seat occupancy stored in the file." }),
+    createPackedSelectField({ id: "passengerRearRight", offset: 48, shift: 6, options: passengerOptions, label: "Rear Right", description: "Rear-right passenger slot.", impact: "Seat occupancy stored in the file." }),
+    createByteField({ id: "bodyConfig", offset: 49, kind: "select", options: bodyConfigOptions, min: 0, max: bodyConfigOptions.length - 1, label: "Body Config", description: "Vehicle-specific body option.", impact: "Changes roof or body variant on supported cars." }),
+    createByteField({ id: "tcSlip", offset: 50, min: 0, max: 25.5, step: 0.1, decode: (raw) => raw / 10, encode: (value) => value * 10, label: "TC Slip", unit: "%", description: "Allowed slip before TC acts.", impact: "More: later TC intervention. Less: earlier traction control." }),
+    createByteField({ id: "tcEngageSpeed", offset: 51, min: 0, max: 255, label: "TC Engage Speed", unit: "km/h", description: "Minimum speed for TC action.", impact: "Higher: TC waits longer. Lower: TC works earlier." }),
+    createFloatField({ id: "rearRideHeight", offset: 52, min: 0, max: 300, step: 0.1, label: "Rear Ride Height", unit: "mm", description: "Rear chassis height.", impact: "Higher: more clearance. Lower: more response, more floor-strike risk." }),
+    createFloatField({ id: "rearSpring", offset: 56, min: 0, max: 500, step: 0.1, label: "Rear Spring", unit: "N/mm", description: "Rear spring stiffness.", impact: "Stiffer: sharper platform, less traction. Softer: more compliance." }),
+    createFloatField({ id: "rearBump", offset: 60, min: 0, max: 500, step: 0.1, label: "Rear Bump", unit: "N/mm", description: "Rear compression damping.", impact: "More: more support on compression. Less: more kerb compliance." }),
+    createFloatField({ id: "rearRebound", offset: 64, min: 0, max: 500, step: 0.1, label: "Rear Rebound", unit: "N/mm", description: "Rear rebound damping.", impact: "More: slower rear extension. Less: freer traction recovery." }),
+    createFloatField({ id: "rearArb", offset: 68, min: 0, max: 500, step: 0.1, label: "Rear ARB", unit: "N/mm", description: "Rear anti-roll bar.", impact: "Stiffer: more rotation. Softer: more rear grip on exit." }),
+    createFloatField({ id: "handbrakeStrength", offset: 72, min: 0, max: 10000, step: 1, label: "Handbrake Strength", unit: "Nm", description: "Handbrake torque.", impact: "More: stronger rear lock. Less: weaker rotation aid." }),
+    createByteField({ id: "rearToe", offset: 76, min: -0.9, max: 0.9, step: 0.1, decode: formatToe, encode: encodeToe, label: "Rear Toe", unit: "deg", description: "Rear toe setting.", impact: "More toe-in: steadier rear. More toe-out: more rotation." }),
+    createByteField({ id: "rearTyreType", offset: 78, kind: "select", options: tyreCompoundOptions, min: 0, max: tyreCompoundOptions.length - 1, label: "Rear Compound", description: "Rear tyre compound.", impact: "Softer compounds grip more, wear and heat more." }),
+    createByteField({ id: "rearCamberLeft", offset: 80, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Rear Left Camber", unit: "deg", description: "Rear-left camber.", impact: "More negative: more loaded-corner grip, less traction footprint." }),
+    createByteField({ id: "rearCamberRight", offset: 81, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Rear Right Camber", unit: "deg", description: "Rear-right camber.", impact: "More negative: more loaded-corner grip, less traction footprint." }),
+    createByteField({ id: "rearTyreSize", offset: 82, kind: "select", options: tyreSizeIndexOptions, min: 0, max: tyreSizeIndexOptions.length - 1, label: "Rear Size Index", description: "Rear tyre size index.", impact: "Higher: larger alternate tyre where supported." }),
+    createByteField({ id: "rearDiffPreload", offset: 83, min: 0, max: 2550, step: 10, decode: (raw) => raw * 10, encode: (value) => value / 10, label: "Rear Preload", unit: "Nm", description: "Rear diff preload.", impact: "More: stronger initial locking. Less: freer off-throttle rotation." }),
+    createByteField({ id: "rearDiffType", offset: 84, kind: "select", options: axleDiffTypeOptions, min: 0, max: axleDiffTypeOptions.length - 1, label: "Rear Diff Type", description: "Rear differential type.", impact: "Changes the base locking mechanism on the rear axle." }),
+    createByteField({ id: "rearViscousTorque", offset: 85, min: 0, max: 255, label: "Rear Viscous Torque", description: "Rear viscous locking.", impact: "More: stronger rear coupling. Less: freer wheel speed split." }),
+    createByteField({ id: "rearPowerLock", offset: 86, min: 0, max: 100, label: "Rear Power Lock", unit: "%", description: "Rear lock on throttle.", impact: "More: stronger exit lock. Less: freer rear on power." }),
+    createByteField({ id: "rearCoastLock", offset: 87, min: 0, max: 100, label: "Rear Coast Lock", unit: "%", description: "Rear lock off-throttle.", impact: "More: steadier entry. Less: freer trail-brake rotation." }),
+    createWordField({ id: "rearLeftPressure", offset: 88, min: 0, max: 400, step: 1, label: "Rear Left Pressure", unit: "kPa", description: "Rear-left pressure.", impact: "More: sharper response, smaller footprint. Less: more compliance." }),
+    createWordField({ id: "rearRightPressure", offset: 90, min: 0, max: 400, step: 1, label: "Rear Right Pressure", unit: "kPa", description: "Rear-right pressure.", impact: "More: sharper response, smaller footprint. Less: more compliance." }),
+    createFloatField({ id: "frontRideHeight", offset: 92, min: 0, max: 300, step: 0.1, label: "Front Ride Height", unit: "mm", description: "Front chassis height.", impact: "Higher: more clearance. Lower: more front response, more scrape risk." }),
+    createFloatField({ id: "frontSpring", offset: 96, min: 0, max: 500, step: 0.1, label: "Front Spring", unit: "N/mm", description: "Front spring stiffness.", impact: "Stiffer: sharper direction change. Softer: more front compliance." }),
+    createFloatField({ id: "frontBump", offset: 100, min: 0, max: 500, step: 0.1, label: "Front Bump", unit: "N/mm", description: "Front compression damping.", impact: "More: firmer support on entry load. Less: more kerb absorption." }),
+    createFloatField({ id: "frontRebound", offset: 104, min: 0, max: 500, step: 0.1, label: "Front Rebound", unit: "N/mm", description: "Front rebound damping.", impact: "More: slower front extension. Less: faster front recovery." }),
+    createFloatField({ id: "frontArb", offset: 108, min: 0, max: 500, step: 0.1, label: "Front ARB", unit: "N/mm", description: "Front anti-roll bar.", impact: "Stiffer: sharper turn-in. Softer: more front mechanical grip." }),
+    createByteField({ id: "frontToe", offset: 116, min: -0.9, max: 0.9, step: 0.1, decode: formatToe, encode: encodeToe, label: "Front Toe", unit: "deg", description: "Front toe setting.", impact: "More toe-out: stronger entry. More toe-in: calmer straight-line feel." }),
+    createByteField({ id: "frontCaster", offset: 117, min: 0, max: 12, step: 0.1, decode: (raw) => raw / 10, encode: (value) => value * 10, label: "Front Caster", unit: "deg", description: "Front caster.", impact: "More: heavier steering and more camber gain. Less: lighter steering." }),
+    createByteField({ id: "frontTyreType", offset: 118, kind: "select", options: tyreCompoundOptions, min: 0, max: tyreCompoundOptions.length - 1, label: "Front Compound", description: "Front tyre compound.", impact: "Softer compounds grip more, wear and heat more." }),
+    createByteField({ id: "frontCamberLeft", offset: 120, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Front Left Camber", unit: "deg", description: "Front-left camber.", impact: "More negative: more cornering grip, less braking footprint." }),
+    createByteField({ id: "frontCamberRight", offset: 121, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Front Right Camber", unit: "deg", description: "Front-right camber.", impact: "More negative: more cornering grip, less braking footprint." }),
+    createByteField({ id: "frontTyreSize", offset: 122, kind: "select", options: tyreSizeIndexOptions, min: 0, max: tyreSizeIndexOptions.length - 1, label: "Front Size Index", description: "Front tyre size index.", impact: "Higher: larger alternate tyre where supported." }),
+    createByteField({ id: "frontDiffPreload", offset: 123, min: 0, max: 2550, step: 10, decode: (raw) => raw * 10, encode: (value) => value / 10, label: "Front Preload", unit: "Nm", description: "Front diff preload.", impact: "More: stronger initial locking. Less: freer front axle." }),
+    createByteField({ id: "frontDiffType", offset: 124, kind: "select", options: axleDiffTypeOptions, min: 0, max: axleDiffTypeOptions.length - 1, label: "Front Diff Type", description: "Front differential type.", impact: "Changes the base locking mechanism on the front axle." }),
+    createByteField({ id: "frontViscousTorque", offset: 125, min: 0, max: 255, label: "Front Viscous Torque", description: "Front viscous locking.", impact: "More: stronger front coupling. Less: freer wheel speed split." }),
+    createByteField({ id: "frontPowerLock", offset: 126, min: 0, max: 100, label: "Front Power Lock", unit: "%", description: "Front lock on throttle.", impact: "More: stronger front pull, more understeer risk. Less: freer front axle." }),
+    createByteField({ id: "frontCoastLock", offset: 127, min: 0, max: 100, label: "Front Coast Lock", unit: "%", description: "Front lock off-throttle.", impact: "More: stronger front pull on entry. Less: freer rotation." }),
+    createWordField({ id: "frontLeftPressure", offset: 128, min: 0, max: 400, step: 1, label: "Front Left Pressure", unit: "kPa", description: "Front-left pressure.", impact: "More: sharper response, smaller footprint. Less: more compliance." }),
+    createWordField({ id: "frontRightPressure", offset: 130, min: 0, max: 400, step: 1, label: "Front Right Pressure", unit: "kPa", description: "Front-right pressure.", impact: "More: sharper response, smaller footprint. Less: more compliance." })
+];
+
+const fieldById = new Map(allSetupFields.map((field) => [field.id, field]));
+const setupSections = [
     {
-        id: "general",
-        title: "General Balance",
-        description: "High-level switches and controls that change how the whole car behaves.",
-        fields: [
-            createBitField({ id: "absEnabled", offset: 12, bit: 2, label: "ABS", description: "Helps keep braking stable under heavy pedal pressure.", impact: "Braking stability and lock-up resistance." }),
-            createBitField({ id: "tcEnabled", offset: 12, bit: 1, label: "Traction Control", description: "Helps stop wheelspin when power is applied too aggressively.", impact: "Exit traction and throttle confidence." }),
-            createBitField({ id: "asymmetricalSetup", offset: 12, bit: 0, label: "Asymmetrical Setup", description: "Allows left and right sides of the setup to differ.", impact: "Track-specific balance options." }),
-            createByteField({ id: "tyreBrand", offset: 15, kind: "select", options: tyreBrandOptions, min: 0, max: tyreBrandOptions.length - 1, label: "Tyre Brand", description: "The selected tyre manufacturer for this setup file.", impact: "Base tyre family and compatibility." }),
-            createFloatField({ id: "brakeStrength", offset: 16, min: 0, max: 10000, step: 1, label: "Brake Strength", unit: "Nm", description: "Overall brake torque available at full pedal input.", impact: "Stopping power versus lock-up sensitivity." }),
-            createByteField({ id: "rearWing", offset: 20, min: 0, max: 60, label: "Rear Wing", description: "Higher wing gives more rear stability but more drag.", impact: "Rear grip, confidence and top speed." }),
-            createByteField({ id: "frontWing", offset: 21, min: 0, max: 60, label: "Front Wing", description: "Higher front wing gives more front bite but more drag.", impact: "Turn-in response, front grip and top speed." }),
-            createByteField({ id: "voluntaryMass", offset: 22, min: 0, max: 255, label: "Voluntary Mass", unit: "kg", description: "Adds ballast voluntarily. Usually used only for restrictions or experiments.", impact: "Acceleration, braking and tyre load." }),
-            createByteField({ id: "intakeRestriction", offset: 23, min: 0, max: 100, label: "Intake Restriction", unit: "%", description: "Artificially reduces engine breathing and power.", impact: "Top speed and acceleration." }),
-            createByteField({ id: "steeringLock", offset: 24, min: 0, max: 90, label: "Max Steering Lock", unit: "deg", description: "Maximum steering angle available to the front wheels.", impact: "Hairpins, rotation and steering precision." }),
-            createByteField({ id: "parallelSteering", offset: 25, min: 0, max: 100, label: "Parallel Steering", unit: "%", description: "Adjusts how both front wheels steer relative to each other.", impact: "Turn-in feel and tyre scrub." }),
-            createByteField({ id: "brakeBalance", offset: 26, min: 0, max: 100, label: "Brake Balance", unit: "%F", description: "Moves braking effort toward the front or rear.", impact: "Braking stability versus rotation." }),
-            createByteField({ id: "engineBrakeReduction", offset: 27, min: 0, max: 100, label: "Engine Brake Reduction", unit: "%", description: "Reduces engine drag on corner entry.", impact: "Entry stability and lift-off behaviour." })
+        id: "brakes",
+        title: "Brakes",
+        subsections: [
+            { fields: ["brakeStrength", "brakeBalance", "handbrakeStrength", "absEnabled"] }
+        ]
+    },
+    {
+        id: "suspension",
+        title: "Suspension",
+        layout: "paired-table",
+        rows: [
+            { label: "Ride Height", frontField: "frontRideHeight", rearField: "rearRideHeight" },
+            { label: "Stiffness", frontField: "frontSpring", rearField: "rearSpring" },
+            { label: "Bump Damping", frontField: "frontBump", rearField: "rearBump" },
+            { label: "Rebound", frontField: "frontRebound", rearField: "rearRebound" },
+            { label: "Anti-Roll", frontField: "frontArb", rearField: "rearArb" }
+        ]
+    },
+    {
+        id: "steering",
+        title: "Steering",
+        subsections: [
+            { title: "Geometry", fields: ["steeringLock", "parallelSteering", "frontToe", "frontCaster", "rearToe", "asymmetricalSetup"] }
         ]
     },
     {
         id: "drivetrain",
-        title: "Drivetrain & Gearing",
-        description: "Controls how power is delivered and how quickly the car runs through the gears.",
-        fields: [
-            createByteField({ id: "centreDiffType", offset: 28, kind: "select", options: centreDiffTypeOptions, min: 0, max: centreDiffTypeOptions.length - 1, label: "Centre Diff Type", description: "Sets the coupling style between front and rear axles.", impact: "4WD balance and driveline feel." }),
-            createByteField({ id: "centreDiffViscousTorque", offset: 29, min: 0, max: 255, label: "Centre Viscous Torque", description: "How strongly a viscous centre diff resists speed difference.", impact: "Mid-corner driveline binding and traction." }),
-            createByteField({ id: "centreDiffTorqueSplit", offset: 31, min: 0, max: 100, label: "Centre Torque Split", unit: "%F", description: "Moves static torque distribution frontward or rearward.", impact: "Corner balance under power." }),
-            createWordField({ id: "gearFinal", offset: 34, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Final Drive", description: "Shorter final drive boosts acceleration, longer improves top speed.", impact: "Acceleration versus maximum speed." }),
-            createWordField({ id: "gear1", offset: 36, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 1", description: "First gear ratio.", impact: "Launch and hairpin exits." }),
-            createWordField({ id: "gear2", offset: 38, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 2", description: "Second gear ratio.", impact: "Low-speed acceleration." }),
-            createWordField({ id: "gear3", offset: 40, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 3", description: "Third gear ratio.", impact: "Medium-speed acceleration." }),
-            createWordField({ id: "gear4", offset: 42, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 4", description: "Fourth gear ratio.", impact: "Mid-speed acceleration and flexibility." }),
-            createWordField({ id: "gear5", offset: 44, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 5", description: "Fifth gear ratio.", impact: "Fast sections and overtakes." }),
-            createWordField({ id: "gear6", offset: 46, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 6", description: "Sixth gear ratio.", impact: "Top-end speed and efficiency." }),
-            createWordField({ id: "gear7", offset: 32, min: 0.5, max: 7.5, step: 0.001, decode: formatRatio, encode: encodeRatio, label: "Gear 7", description: "Seventh gear ratio where the car supports it.", impact: "Longest top-speed gearing." }),
-            createByteField({ id: "tcSlip", offset: 50, min: 0, max: 25.5, step: 0.1, decode: (raw) => raw / 10, encode: (value) => value * 10, label: "TC Slip", unit: "%", description: "How much wheel slip is allowed before traction control intervenes.", impact: "Power delivery sharpness." }),
-            createByteField({ id: "tcEngageSpeed", offset: 51, min: 0, max: 255, label: "TC Engage Speed", unit: "km/h", description: "Vehicle speed above which traction control starts acting.", impact: "Low-speed traction control behaviour." })
+        title: "Final Drive, Diff & TC",
+        layout: "wide",
+        subsections: [
+            { title: "Centre", fields: ["centreDiffType", "centreDiffViscousTorque", "centreDiffTorqueSplit", "tcEnabled", "tcSlip", "tcEngageSpeed"] },
+            { title: "Front Diff", fields: ["frontDiffType", "frontDiffPreload", "frontViscousTorque", "frontPowerLock", "frontCoastLock"] },
+            { title: "Rear Diff", fields: ["rearDiffType", "rearDiffPreload", "rearViscousTorque", "rearPowerLock", "rearCoastLock"] },
+            { title: "Ratios", helper: "gear", fields: ["gearFinal", "gear1", "gear2", "gear3", "gear4", "gear5", "gear6", "gear7"] }
         ]
     },
     {
-        id: "rear",
-        title: "Rear Suspension & Diff",
-        description: "Rear-end support, traction and stability under braking and throttle.",
-        fields: [
-            createFloatField({ id: "rearRideHeight", offset: 52, min: 0, max: 300, step: 0.1, label: "Rear Ride Height", unit: "mm", description: "Rear body height. Higher usually adds bump clearance but raises the centre of mass.", impact: "Weight transfer, rake and kerb clearance." }),
-            createFloatField({ id: "rearSpring", offset: 56, min: 0, max: 500, step: 0.1, label: "Rear Spring", unit: "N/mm", description: "Main rear spring stiffness.", impact: "Rear support, traction and responsiveness." }),
-            createFloatField({ id: "rearBump", offset: 60, min: 0, max: 500, step: 0.1, label: "Rear Bump Damping", unit: "N/mm", description: "Rear compression damping when the suspension compresses.", impact: "Kerb control and transient rear support." }),
-            createFloatField({ id: "rearRebound", offset: 64, min: 0, max: 500, step: 0.1, label: "Rear Rebound Damping", unit: "N/mm", description: "Rear rebound damping when the suspension extends.", impact: "Exit traction and platform recovery." }),
-            createFloatField({ id: "rearArb", offset: 68, min: 0, max: 500, step: 0.1, label: "Rear Anti-roll Bar", unit: "N/mm", description: "Connects rear wheels in roll. Stiffer often rotates the car more.", impact: "Mid-corner balance and exit traction." }),
-            createByteField({ id: "rearToe", offset: 76, min: -0.9, max: 0.9, step: 0.1, decode: formatToe, encode: encodeToe, label: "Rear Toe", unit: "deg", description: "Toe-in calms the rear, toe-out makes it more lively.", impact: "Straight-line stability and rotation." }),
-            createByteField({ id: "rearTyreType", offset: 78, kind: "select", options: tyreCompoundOptions, min: 0, max: tyreCompoundOptions.length - 1, label: "Rear Tyre", description: "Compound used on the rear axle.", impact: "Grip, temperature and wear." }),
-            createByteField({ id: "rearCamberLeft", offset: 80, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Rear Left Camber", unit: "deg", description: "Rear left wheel camber angle.", impact: "Loaded cornering grip versus traction." }),
-            createByteField({ id: "rearCamberRight", offset: 81, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Rear Right Camber", unit: "deg", description: "Rear right wheel camber angle.", impact: "Loaded cornering grip versus traction." }),
-            createByteField({ id: "rearDiffPreload", offset: 83, min: 0, max: 2550, step: 10, decode: (raw) => raw * 10, encode: (value) => value / 10, label: "Rear Diff Preload", unit: "Nm", description: "Baseline locking before power or coast ramps act.", impact: "Initial rotation and throttle pickup." }),
-            createByteField({ id: "rearDiffType", offset: 84, kind: "select", options: axleDiffTypeOptions, min: 0, max: axleDiffTypeOptions.length - 1, label: "Rear Diff Type", description: "Rear axle differential design.", impact: "Power delivery character." }),
-            createByteField({ id: "rearViscousTorque", offset: 85, min: 0, max: 255, label: "Rear Viscous Torque", description: "Viscous locking strength when that diff type is used.", impact: "Rear axle coupling." }),
-            createByteField({ id: "rearPowerLock", offset: 86, min: 0, max: 100, label: "Rear Power Lock", unit: "%", description: "Locking under power.", impact: "Exit traction versus push or oversteer." }),
-            createByteField({ id: "rearCoastLock", offset: 87, min: 0, max: 100, label: "Rear Coast Lock", unit: "%", description: "Locking off-throttle and under braking.", impact: "Entry stability versus rotation." }),
-            createWordField({ id: "rearLeftPressure", offset: 88, min: 0, max: 400, step: 1, label: "Rear Left Pressure", unit: "kPa", description: "Tyre pressure on the rear-left wheel.", impact: "Temperature, response and grip footprint." }),
-            createWordField({ id: "rearRightPressure", offset: 90, min: 0, max: 400, step: 1, label: "Rear Right Pressure", unit: "kPa", description: "Tyre pressure on the rear-right wheel.", impact: "Temperature, response and grip footprint." })
+        id: "tyres",
+        title: "Tyres",
+        subsections: [
+            { title: "Front", fields: ["tyreBrand", "frontTyreType", "frontTyreSize", "frontLeftPressure", "frontRightPressure", "frontCamberLeft", "frontCamberRight"] },
+            { title: "Rear", fields: ["rearTyreType", "rearTyreSize", "rearLeftPressure", "rearRightPressure", "rearCamberLeft", "rearCamberRight"] }
         ]
     },
     {
-        id: "front",
-        title: "Front Suspension & Diff",
-        description: "Front-end bite, direction change and braking support.",
-        fields: [
-            createFloatField({ id: "frontRideHeight", offset: 92, min: 0, max: 300, step: 0.1, label: "Front Ride Height", unit: "mm", description: "Front body height. Lower can help aero and response if the car has enough clearance.", impact: "Turn-in, rake and kerb clearance." }),
-            createFloatField({ id: "frontSpring", offset: 96, min: 0, max: 500, step: 0.1, label: "Front Spring", unit: "N/mm", description: "Main front spring stiffness.", impact: "Front support and responsiveness." }),
-            createFloatField({ id: "frontBump", offset: 100, min: 0, max: 500, step: 0.1, label: "Front Bump Damping", unit: "N/mm", description: "Front compression damping.", impact: "Kerb support and entry weight transfer." }),
-            createFloatField({ id: "frontRebound", offset: 104, min: 0, max: 500, step: 0.1, label: "Front Rebound Damping", unit: "N/mm", description: "Front rebound damping.", impact: "Steering response and platform recovery." }),
-            createFloatField({ id: "frontArb", offset: 108, min: 0, max: 500, step: 0.1, label: "Front Anti-roll Bar", unit: "N/mm", description: "Connects front wheels in roll. Stiffer often sharpens the front but can reduce grip on exit.", impact: "Turn-in precision versus front grip." }),
-            createByteField({ id: "frontToe", offset: 116, min: -0.9, max: 0.9, step: 0.1, decode: formatToe, encode: encodeToe, label: "Front Toe", unit: "deg", description: "Front toe angle. Toe-out sharpens entry, toe-in calms the car.", impact: "Turn-in bite and tyre scrub." }),
-            createByteField({ id: "frontCaster", offset: 117, min: 0, max: 12, step: 0.1, decode: (raw) => raw / 10, encode: (value) => value * 10, label: "Front Caster", unit: "deg", description: "Caster angle helps steering weight and camber gain while turning.", impact: "Steering feel and loaded front grip." }),
-            createByteField({ id: "frontTyreType", offset: 118, kind: "select", options: tyreCompoundOptions, min: 0, max: tyreCompoundOptions.length - 1, label: "Front Tyre", description: "Compound used on the front axle.", impact: "Grip, temperature and wear." }),
-            createByteField({ id: "frontCamberLeft", offset: 120, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Front Left Camber", unit: "deg", description: "Front left wheel camber angle.", impact: "Turn-in grip versus braking footprint." }),
-            createByteField({ id: "frontCamberRight", offset: 121, min: -4.5, max: 4.5, step: 0.1, decode: formatCamber, encode: encodeCamber, label: "Front Right Camber", unit: "deg", description: "Front right wheel camber angle.", impact: "Turn-in grip versus braking footprint." }),
-            createByteField({ id: "frontDiffPreload", offset: 123, min: 0, max: 2550, step: 10, decode: (raw) => raw * 10, encode: (value) => value / 10, label: "Front Diff Preload", unit: "Nm", description: "Baseline front diff locking before ramps act.", impact: "Initial traction and entry pull." }),
-            createByteField({ id: "frontDiffType", offset: 124, kind: "select", options: axleDiffTypeOptions, min: 0, max: axleDiffTypeOptions.length - 1, label: "Front Diff Type", description: "Front axle differential design.", impact: "Power-on front axle behaviour." }),
-            createByteField({ id: "frontViscousTorque", offset: 125, min: 0, max: 255, label: "Front Viscous Torque", description: "Viscous locking strength for the front diff.", impact: "Front axle coupling." }),
-            createByteField({ id: "frontPowerLock", offset: 126, min: 0, max: 100, label: "Front Power Lock", unit: "%", description: "Front diff locking under power.", impact: "Front traction versus understeer." }),
-            createByteField({ id: "frontCoastLock", offset: 127, min: 0, max: 100, label: "Front Coast Lock", unit: "%", description: "Front diff locking off-throttle.", impact: "Entry pull and braking behaviour." }),
-            createWordField({ id: "frontLeftPressure", offset: 128, min: 0, max: 400, step: 1, label: "Front Left Pressure", unit: "kPa", description: "Tyre pressure on the front-left wheel.", impact: "Response, temperature and grip footprint." }),
-            createWordField({ id: "frontRightPressure", offset: 130, min: 0, max: 400, step: 1, label: "Front Right Pressure", unit: "kPa", description: "Response, temperature and grip footprint.", impact: "Response, temperature and grip footprint." })
+        id: "aero",
+        title: "Downforce & Balance",
+        subsections: [
+            { title: "Aero", fields: ["frontWing", "rearWing"] },
+            { title: "Vehicle", fields: ["voluntaryMass", "massPosition", "intakeRestriction", "bodyConfig"] }
+        ]
+    },
+    {
+        id: "passengers",
+        title: "Passengers",
+        subsections: [
+            { title: "Cabin", fields: ["passengerFrontRight", "passengerRearLeft", "passengerRearCenter", "passengerRearRight"] }
         ]
     }
 ];
-
-const allSetupFields = setupGroups.flatMap((group) => group.fields);
 
 function escapeHtml(value) {
     return String(value)
@@ -357,28 +454,24 @@ function getGearSpeedComment(field) {
 
 function getFieldInlineComment(field) {
     const gearSpeedComment = getGearSpeedComment(field);
-    if (gearSpeedComment) {
-        return gearSpeedComment;
+    if (gearSpeedComment && field.impact) {
+        return `${field.impact} · ${gearSpeedComment}`;
     }
 
-    return field.impact || field.description || "";
+    return gearSpeedComment || field.impact || field.description || "";
 }
 
-function getGearHelperMarkup(group) {
-    if (group.id !== "drivetrain") {
-        return "";
-    }
-
+function getGearHelperMarkup() {
     const profileOptions = supportedCarCodes.map((code) => {
         const profile = supportedCarProfiles[code];
-        return `<option value="${code}" ${setupEditorState.selectedCarCode === code ? "selected" : ""}>${code} · ${profile.name}</option>`;
+        return `<option value="${code}" ${setupEditorState.selectedCarCode === code ? "selected" : ""}>${code} · ${escapeHtml(profile.name)}</option>`;
     }).join("");
 
     return `
         <div class="setup-gear-helper">
-            <div class="setup-gear-helper-copy-block">
-                <p class="setup-gear-helper-title">Gear Speed Helper</p>
-                <p class="setup-gear-helper-copy">Theoretical speed from selected tyre size, final drive and gear ratio.</p>
+            <div class="setup-gear-helper-head">
+                <p class="setup-gear-helper-title">Speed Helper</p>
+                <p class="setup-gear-helper-meta" id="setup-gear-helper-meta"></p>
             </div>
             <div class="setup-gear-helper-controls">
                 <label class="setup-gear-helper-field">
@@ -393,7 +486,6 @@ function getGearHelperMarkup(group) {
                     <input id="setup-gear-rpm" class="setup-field-input" type="number" min="1000" max="25000" step="100" value="${Math.round(setupEditorState.gearTargetRpm)}">
                 </label>
             </div>
-            <p class="setup-gear-helper-meta" id="setup-gear-helper-meta"></p>
         </div>`;
 }
 
@@ -450,80 +542,188 @@ function decodeSetupValues(view) {
     return decoded;
 }
 
-function getSummaryCardsMarkup() {
-    return `
-        <div class="setup-summary-card">
-            <p class="setup-summary-label">Format</p>
-            <p class="setup-summary-value">${setupEditorState.signature || "-"} / v${setupEditorState.formatVersion || "-"}</p>
-        </div>
-        <div class="setup-summary-card">
-            <p class="setup-summary-label">Internal Version</p>
-            <p class="setup-summary-value">${setupEditorState.internalVersion || "-"}</p>
-        </div>
-        <div class="setup-summary-card">
-            <p class="setup-summary-label">Patch X Setup</p>
-            <p class="setup-summary-value">${setupEditorState.isPatchX ? "Yes" : "No"}</p>
-        </div>
-        <div class="setup-summary-card">
-            <p class="setup-summary-label">Known Parameters</p>
-            <p class="setup-summary-value">${allSetupFields.length}</p>
-        </div>`;
+function getFieldTitle(field, labelOverride = "") {
+    return getFieldInlineComment(field) || field.description || labelOverride || field.label;
 }
 
-function renderFieldMarkup(field) {
+function getSectionFieldIds(section) {
+    if (Array.isArray(section.rows)) {
+        return section.rows.flatMap((row) => [row.frontField, row.rearField]);
+    }
+
+    if (!Array.isArray(section.subsections)) {
+        return [];
+    }
+
+    return section.subsections.flatMap((subsection) => subsection.fields.map((fieldEntry) => typeof fieldEntry === "string" ? fieldEntry : fieldEntry.id));
+}
+
+function getActiveSetupSection() {
+    return setupSections.find((section) => section.id === setupEditorState.activeSectionId) ?? setupSections[0];
+}
+
+function resolveFieldEntry(fieldEntry) {
+    if (typeof fieldEntry === "string") {
+        return { field: fieldById.get(fieldEntry), labelOverride: "" };
+    }
+
+    return {
+        field: fieldById.get(fieldEntry.id),
+        labelOverride: fieldEntry.label || ""
+    };
+}
+
+function renderFieldControlMarkup(field, labelOverride = "") {
     const value = setupEditorState.currentValues[field.id];
     const disabledAttribute = setupEditorState.originalBytes ? "" : "disabled";
-    const inlineComment = getFieldInlineComment(field);
-    const unitMarkup = field.unit ? `<span class="setup-field-unit">${field.unit}</span>` : "";
-    const safeDescription = escapeHtml(field.description);
+    const safeLabel = escapeHtml(labelOverride || field.label);
 
     if (field.kind === "boolean") {
         return `
-            <label class="setup-field-row setup-field-row--boolean" title="${safeDescription}">
-                <div class="setup-field-title-block">
-                    <p class="setup-field-label">${field.label}</p>
-                </div>
-                <div class="setup-field-control setup-field-control--toggle">
-                    <span class="setup-bool-state">${value ? "On" : "Off"}</span>
-                    <input type="checkbox" class="setup-field-checkbox" data-setup-field="${field.id}" ${value ? "checked" : ""} ${disabledAttribute}>
-                </div>
-                <p class="setup-field-comment" data-setup-comment="${field.id}">${inlineComment}</p>
-            </label>`;
+            <div class="setup-field-control setup-field-control--toggle">
+                <span class="setup-bool-state">${value ? "On" : "Off"}</span>
+                <input type="checkbox" class="setup-field-checkbox" data-setup-field="${field.id}" ${value ? "checked" : ""} ${disabledAttribute}>
+            </div>`;
     }
 
     if (field.kind === "select") {
         return `
-            <label class="setup-field-row" title="${safeDescription}">
-                <div class="setup-field-title-block">
-                    <p class="setup-field-label">${field.label}</p>
-                </div>
-                <div class="setup-field-control">
-                    <select class="setup-field-input" data-setup-field="${field.id}" ${disabledAttribute}>
-                        ${field.options.map((option, index) => `<option value="${index}" ${Number(value) === index ? "selected" : ""}>${option}</option>`).join("")}
-                    </select>
-                </div>
-                <p class="setup-field-comment" data-setup-comment="${field.id}">${inlineComment}</p>
-            </label>`;
+            <div class="setup-field-control">
+                <select class="setup-field-input" data-setup-field="${field.id}" ${disabledAttribute}>
+                    ${field.options.map((option, index) => `<option value="${index}" ${Number(value) === index ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+                </select>
+            </div>`;
     }
 
     return `
-        <label class="setup-field-row" title="${safeDescription}">
-            <div class="setup-field-title-block">
-                <p class="setup-field-label">${field.label}${unitMarkup}</p>
-            </div>
-            <div class="setup-field-control">
+        <div class="setup-field-control">
+            <div class="setup-field-stepper">
+                <button type="button" class="setup-stepper-button" data-setup-step="-1" aria-label="Decrease ${safeLabel}" ${disabledAttribute}>-</button>
                 <input
                     type="number"
-                    class="setup-field-input"
+                    inputmode="decimal"
+                    class="setup-field-input setup-field-input--number"
                     data-setup-field="${field.id}"
-                    value="${value ?? ""}"
+                    value="${escapeHtml(formatNumericValue(value, field.step ?? 1))}"
                     min="${field.min ?? ""}"
                     max="${field.max ?? ""}"
                     step="${field.step ?? "1"}"
                     ${disabledAttribute}>
+                <button type="button" class="setup-stepper-button" data-setup-step="1" aria-label="Increase ${safeLabel}" ${disabledAttribute}>+</button>
             </div>
-                    <p class="setup-field-comment" data-setup-comment="${field.id}">${inlineComment}</p>
+        </div>`;
+}
+
+function renderFieldMarkup(field, labelOverride = "") {
+    const unitMarkup = field.unit ? `<span class="setup-field-unit">${escapeHtml(field.unit)}</span>` : "";
+    const displayLabel = labelOverride || field.label;
+    const safeDescription = escapeHtml(getFieldTitle(field, displayLabel));
+    const safeLabel = escapeHtml(displayLabel);
+
+    return `
+        <label class="setup-field-row${field.kind === "boolean" ? " setup-field-row--boolean" : ""}" title="${safeDescription}" data-setup-title="${field.id}">
+            <div class="setup-field-main">
+                <div class="setup-field-title-block">
+                    <p class="setup-field-label">${safeLabel}</p>
+                    ${unitMarkup}
+                </div>
+            </div>
+            ${renderFieldControlMarkup(field, displayLabel)}
         </label>`;
+}
+
+function renderSubsectionMarkup(subsection) {
+    const fieldsMarkup = subsection.fields
+        .map(resolveFieldEntry)
+        .filter(({ field }) => Boolean(field))
+        .map(({ field, labelOverride }) => renderFieldMarkup(field, labelOverride))
+        .join("");
+
+    const titleMarkup = subsection.title
+        ? `<p class="setup-subsection-title">${escapeHtml(subsection.title)}</p>`
+        : "";
+
+    return `
+        <section class="setup-subsection">
+            ${titleMarkup}
+            ${subsection.helper === "gear" ? getGearHelperMarkup() : ""}
+            <div class="setup-field-list">
+                ${fieldsMarkup}
+            </div>
+        </section>`;
+}
+
+function renderPairedTableContentMarkup(section) {
+    const rowsMarkup = section.rows.map((row) => {
+        const frontField = fieldById.get(row.frontField);
+        const rearField = fieldById.get(row.rearField);
+        if (!frontField || !rearField) {
+            return "";
+        }
+
+        const unit = frontField.unit || rearField.unit || "";
+
+        return `
+            <div class="setup-paired-row">
+                <div class="setup-paired-parameter">
+                    <p class="setup-paired-label">${escapeHtml(row.label)}</p>
+                    ${unit ? `<span class="setup-paired-unit">${escapeHtml(unit)}</span>` : ""}
+                </div>
+                <div class="setup-paired-cell" data-setup-title="${frontField.id}" title="${escapeHtml(getFieldTitle(frontField, `Front ${row.label}`))}">
+                    ${renderFieldControlMarkup(frontField, `Front ${row.label}`)}
+                </div>
+                <div class="setup-paired-cell" data-setup-title="${rearField.id}" title="${escapeHtml(getFieldTitle(rearField, `Rear ${row.label}`))}">
+                    ${renderFieldControlMarkup(rearField, `Rear ${row.label}`)}
+                </div>
+            </div>`;
+    }).join("");
+
+    return `
+        <div class="setup-paired-table">
+            <div class="setup-paired-head">
+                <p class="setup-paired-head-cell">Parameter</p>
+                <p class="setup-paired-head-cell">Front</p>
+                <p class="setup-paired-head-cell">Rear</p>
+            </div>
+            ${rowsMarkup}
+        </div>`;
+}
+
+function renderStandardSectionContentMarkup(section) {
+    return `
+        <div class="setup-subsection-grid${section.layout === "wide" ? " setup-subsection-grid--wide" : ""}">
+            ${section.subsections.map((subsection) => renderSubsectionMarkup(subsection)).join("")}
+        </div>`;
+}
+
+function renderSectionContentMarkup(section) {
+    if (section.layout === "paired-table") {
+        return renderPairedTableContentMarkup(section);
+    }
+
+    return renderStandardSectionContentMarkup(section);
+}
+
+function renderTabbedSetupPanelMarkup() {
+    const activeSection = getActiveSetupSection();
+
+    return `
+        <section class="setup-group-card setup-tabbed-panel">
+            <div class="setup-tab-strip" role="tablist" aria-label="Setup sections">
+                ${setupSections.map((section) => `
+                    <button
+                        type="button"
+                        class="setup-tab-button${section.id === activeSection.id ? " is-active" : ""}"
+                        data-setup-tab="${section.id}"
+                        role="tab"
+                        aria-selected="${section.id === activeSection.id ? "true" : "false"}">
+                        ${escapeHtml(section.title)}
+                    </button>`).join("")}
+            </div>
+            <div class="setup-tab-panel-content setup-group-card--${activeSection.id}" role="tabpanel" aria-label="${escapeHtml(activeSection.title)}">
+                ${renderSectionContentMarkup(activeSection)}
+            </div>
+        </section>`;
 }
 
 function renderSetupEditorGroups() {
@@ -532,27 +732,70 @@ function renderSetupEditorGroups() {
         return;
     }
 
-    groupsElement.innerHTML = setupGroups.map((group) => `
-        <section class="setup-group-card">
-            <div class="setup-group-header">
-                <div>
-                    <p class="setup-group-title">${group.title}</p>
-                    <p class="setup-group-copy">${group.description}</p>
-                </div>
-            </div>
-            ${getGearHelperMarkup(group)}
-            <div class="setup-field-list">
-                ${group.fields.map((field) => renderFieldMarkup(field)).join("")}
-            </div>
-        </section>`).join("");
+    groupsElement.innerHTML = renderTabbedSetupPanelMarkup();
+
+    document.querySelectorAll("[data-setup-tab]").forEach((button) => {
+        button.addEventListener("click", handleSectionTabClick);
+    });
 
     document.querySelectorAll("[data-setup-field]").forEach((input) => {
         input.addEventListener("input", handleFieldInput);
         input.addEventListener("change", handleFieldInput);
     });
 
+    document.querySelectorAll("[data-setup-step]").forEach((button) => {
+        button.addEventListener("click", handleStepperButtonClick);
+        button.addEventListener("contextmenu", handleStepperButtonContextMenu);
+    });
+
     bindGearHelperInputs();
     updateGearHelperMeta();
+}
+
+function handleStepperButtonClick(event) {
+    const button = event.currentTarget;
+    adjustStepperValue(button, 1);
+}
+
+function handleStepperButtonContextMenu(event) {
+    event.preventDefault();
+    const button = event.currentTarget;
+    adjustStepperValue(button, 10);
+}
+
+function handleSectionTabClick(event) {
+    const sectionId = event.currentTarget.dataset.setupTab;
+    if (!sectionId || sectionId === setupEditorState.activeSectionId) {
+        return;
+    }
+
+    setupEditorState.activeSectionId = sectionId;
+    renderSetupEditorGroups();
+}
+
+function adjustStepperValue(button, multiplier) {
+    const direction = Number(button.dataset.setupStep);
+    if (!Number.isFinite(direction) || direction === 0) {
+        return;
+    }
+
+    const stepperElement = button.closest(".setup-field-stepper");
+    const input = stepperElement?.querySelector("[data-setup-field]");
+    if (!(input instanceof HTMLInputElement) || input.disabled) {
+        return;
+    }
+
+    const stepCount = Math.max(1, Math.trunc(multiplier));
+
+    if (direction > 0) {
+        input.stepUp(stepCount);
+    } else {
+        input.stepDown(stepCount);
+    }
+
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.focus();
 }
 
 function bindGearHelperInputs() {
@@ -563,7 +806,7 @@ function bindGearHelperInputs() {
         setupEditorState.selectedCarCode = event.target.value;
         updateGearHelperMeta();
         updateDynamicFieldComments();
-        updateAiExport();
+        refreshSetupSummary();
     });
 
     rpmInput?.addEventListener("input", (event) => {
@@ -571,18 +814,14 @@ function bindGearHelperInputs() {
         event.target.value = Math.round(setupEditorState.gearTargetRpm);
         updateGearHelperMeta();
         updateDynamicFieldComments();
-        updateAiExport();
     });
 }
 
 function updateDynamicFieldComments() {
     allSetupFields.forEach((field) => {
-        const commentElement = document.querySelector(`[data-setup-comment="${field.id}"]`);
-        if (!commentElement) {
-            return;
-        }
-
-        commentElement.textContent = getFieldInlineComment(field);
+        document.querySelectorAll(`[data-setup-title="${field.id}"]`).forEach((element) => {
+            element.setAttribute("title", getFieldTitle(field));
+        });
     });
 }
 
@@ -594,7 +833,7 @@ function updateGearHelperMeta() {
 
     const profile = getSelectedCarProfile();
     if (!profile) {
-        metaElement.textContent = "Select the car to show theoretical speed for each gear.";
+        metaElement.textContent = "Select the car to calculate theoretical gear speed.";
         return;
     }
 
@@ -605,7 +844,7 @@ function updateGearHelperMeta() {
 
 function handleFieldInput(event) {
     const fieldId = event.target.dataset.setupField;
-    const field = allSetupFields.find((candidate) => candidate.id === fieldId);
+    const field = fieldById.get(fieldId);
     if (!field) {
         return;
     }
@@ -617,7 +856,7 @@ function handleFieldInput(event) {
         nextValue = field.normalize(Number(event.target.value));
     } else {
         nextValue = field.normalize(event.target.value);
-        event.target.value = nextValue;
+        event.target.value = formatNumericValue(nextValue, field.step ?? 1);
     }
 
     setupEditorState.currentValues[field.id] = nextValue;
@@ -625,7 +864,6 @@ function handleFieldInput(event) {
     updateSetupActionState();
     updateDynamicFieldComments();
     updateGearHelperMeta();
-    updateAiExport();
 }
 
 function updateStatus(message, isError = false) {
@@ -657,59 +895,60 @@ function updateSetupActionState() {
     }
 }
 
-function updateAiExport() {
-    const aiExportElement = document.getElementById("setup-ai-export");
-    if (!aiExportElement) {
-        return;
+function formatFieldValue(field, value) {
+    if (field.kind === "boolean") {
+        return value ? "On" : "Off";
     }
 
+    if (field.kind === "select") {
+        return field.options?.[value] ?? String(value ?? "-");
+    }
+
+    return formatNumericValue(value, field.step ?? 1) || "-";
+}
+
+function buildSetupTextBrief() {
     if (!setupEditorState.originalBytes) {
-        aiExportElement.value = "Load a setup file to generate the AI summary.";
-        return;
+        return "";
     }
 
     const lines = [
-        "LFS setup summary",
-        `File: ${setupEditorState.fileName}`,
-        `Format: ${setupEditorState.signature} / version ${setupEditorState.formatVersion}`,
-        `Patch X setup: ${setupEditorState.isPatchX ? "yes" : "no"}`,
-        "",
-        "Key parameters:"
+        `${setupEditorState.fileName || "setup.set"} | ${setupEditorState.signature || "-"} v${setupEditorState.formatVersion || "-"} | internal ${setupEditorState.internalVersion || "-"} | patch X ${setupEditorState.isPatchX ? "yes" : "no"}`
     ];
 
-    setupGroups.forEach((group) => {
-        lines.push("");
-        lines.push(`[${group.title}]`);
-        group.fields.forEach((field) => {
-            const value = setupEditorState.currentValues[field.id];
-            const displayValue = field.kind === "boolean"
-                ? (value ? "On" : "Off")
-                : field.kind === "select"
-                    ? field.options?.[value] ?? String(value)
-                    : String(value);
-            lines.push(`- ${field.label}: ${displayValue}${field.unit ? ` ${field.unit}` : ""}`);
-            lines.push(`  Notes: ${field.description}`);
-            lines.push(`  Affects: ${getFieldInlineComment(field)}`);
+    const profile = getSelectedCarProfile();
+    if (profile && setupEditorState.selectedCarCode) {
+        lines.push(`Car: ${setupEditorState.selectedCarCode} · ${profile.name}`);
+    }
+
+    setupSections.forEach((section) => {
+        const parts = [];
+
+        getSectionFieldIds(section).forEach((fieldId) => {
+            const field = fieldById.get(fieldId);
+            if (!field) {
+                return;
+            }
+
+            const value = formatFieldValue(field, setupEditorState.currentValues[field.id]);
+            const unitSuffix = field.unit ? ` ${field.unit}` : "";
+            parts.push(`${field.label}: ${value}${unitSuffix}`);
         });
+
+        lines.push(`${section.title}: ${parts.join("; ")}`);
     });
 
-    aiExportElement.value = lines.join("\n");
+    return lines.join("\n");
 }
 
 function refreshSetupUi() {
     const fileNameElement = document.getElementById("setup-file-name");
-    const summaryGrid = document.getElementById("setup-summary-grid");
 
     if (fileNameElement) {
         fileNameElement.textContent = setupEditorState.fileName || "No file loaded";
     }
 
-    if (summaryGrid) {
-        summaryGrid.innerHTML = getSummaryCardsMarkup();
-    }
-
     renderSetupEditorGroups();
-    updateAiExport();
     updateSetupActionState();
 }
 
@@ -743,7 +982,7 @@ async function loadSetupFile(file) {
     setupEditorState.isDirty = false;
     setupEditorState.selectedCarCode = detectCarCodeFromFileName(file.name);
 
-    updateStatus("Setup loaded. You can edit the values locally, save the file, or copy the AI brief.");
+    updateStatus("Setup loaded. Edit values, save the file, or copy the text brief.");
     refreshSetupUi();
 }
 
@@ -766,29 +1005,39 @@ function saveSetupFile() {
     anchor.download = safeName.endsWith(".set") ? safeName : `${safeName}.set`;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+
+    setupEditorState.originalBytes = nextBytes;
     setupEditorState.isDirty = false;
     updateSetupActionState();
     updateStatus("Edited setup saved to disk.");
 }
 
 async function copySetupForAi() {
-    const aiExportElement = document.getElementById("setup-ai-export");
     const copyButton = document.getElementById("setup-copy-ai-button");
-    if (!aiExportElement || !copyButton || !setupEditorState.originalBytes) {
+    if (!copyButton || !setupEditorState.originalBytes) {
         return;
     }
 
+    const textBrief = buildSetupTextBrief();
+
     try {
-        await navigator.clipboard.writeText(aiExportElement.value);
+        await navigator.clipboard.writeText(textBrief);
         const originalText = copyButton.textContent;
-        copyButton.textContent = "Copied for AI";
+        copyButton.textContent = "Copied";
         window.setTimeout(() => {
             copyButton.textContent = originalText;
         }, 1400);
     } catch {
-        aiExportElement.focus();
-        aiExportElement.select();
+        const fallbackElement = document.createElement("textarea");
+        fallbackElement.value = textBrief;
+        fallbackElement.setAttribute("readonly", "readonly");
+        fallbackElement.style.position = "fixed";
+        fallbackElement.style.opacity = "0";
+        document.body.appendChild(fallbackElement);
+        fallbackElement.focus();
+        fallbackElement.select();
         document.execCommand("copy");
+        fallbackElement.remove();
     }
 }
 
@@ -797,10 +1046,10 @@ function resetSetupValues() {
         return;
     }
 
-    const view = new DataView(setupEditorState.originalBytes.buffer.slice(0));
+    const view = new DataView(setupEditorState.originalBytes.slice().buffer);
     setupEditorState.currentValues = decodeSetupValues(view);
     setupEditorState.isDirty = false;
-    updateStatus("Changes reverted to the last loaded file.");
+    updateStatus("Changes reverted to the last loaded state.");
     refreshSetupUi();
 }
 
